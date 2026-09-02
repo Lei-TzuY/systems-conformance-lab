@@ -17,7 +17,7 @@ def test_reducer_accepts_first_strictly_smaller_failure_preserving_candidate() -
 
     def preserves(value: str) -> bool:
         seen.append(value)
-        return "c" in value
+        return value in {"abcdef", "abc"}
 
     result = reduce_case(
         "abcdef",
