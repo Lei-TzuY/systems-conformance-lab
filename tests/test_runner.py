@@ -22,8 +22,8 @@ def test_captures_stdout_stderr_and_exit_code() -> None:
     assert result.signal is None
     assert result.timed_out is False
     assert result.infrastructure_error is None
-    assert result.stdout.text == "out\n"
-    assert result.stderr.text == "err\n"
+    assert result.stdout.text == f"out{os.linesep}"
+    assert result.stderr.text == f"err{os.linesep}"
 
 
 def test_argv_is_not_interpreted_by_a_shell() -> None:
@@ -33,7 +33,7 @@ def test_argv_is_not_interpreted_by_a_shell() -> None:
     )
 
     assert result.exit_code == 0
-    assert result.stdout.text == payload + "\n"
+    assert result.stdout.text == payload + os.linesep
 
 
 def test_timeout_is_classified() -> None:
