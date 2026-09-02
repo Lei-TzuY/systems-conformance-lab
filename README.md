@@ -2,16 +2,19 @@
 
 A reusable systems-correctness laboratory for conformance testing, differential execution, fuzzing, fault injection, reduction, and reproducibility.
 
-The project is intentionally building the correctness substrate first. The current foundation is a safe argv-based process runner that emits a versioned structured execution record suitable for later candidate/oracle comparison.
+The project is intentionally building the correctness substrate first. The current foundation is a safe argv-based process runner plus a structured candidate/oracle comparator that keeps infrastructure failures distinct from product mismatches.
 
 ## Current foundation
 
 - argv-only process execution (`shell=False`)
 - deterministic UTF-8/stdin byte input handling
-- timeout classification
+- timeout classification and process-tree cleanup
 - bounded stdout/stderr capture
 - exit-code / signal metadata
 - JSON-serializable versioned execution records
+- deterministic candidate/oracle comparison
+- explicit `match`, `product_mismatch`, and `infrastructure_failure` classification
+- truncated-stream metadata comparison to avoid false equivalence
 - focused self-tests
 
 ## Development
@@ -22,4 +25,4 @@ pytest
 ruff check .
 ```
 
-The core runner is deliberately target-independent. Project-specific adapters belong above it rather than inside process execution.
+The core runner and comparator are deliberately target-independent. Project-specific adapters belong above them rather than inside process execution or comparison semantics.
