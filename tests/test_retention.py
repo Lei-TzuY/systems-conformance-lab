@@ -7,6 +7,9 @@ from systems_conformance.repro import REPRO_BUNDLE_SCHEMA_VERSION
 from systems_conformance.retention import enforce_repro_retention
 
 
+_ONE_SECOND_NS = 1_000_000_000
+
+
 def _bundle(root, name: str, *, mtime_ns: int, schema: str = REPRO_BUNDLE_SCHEMA_VERSION):
     path = root / name
     path.mkdir()
@@ -22,9 +25,9 @@ def _bundle(root, name: str, *, mtime_ns: int, schema: str = REPRO_BUNDLE_SCHEMA
 
 
 def test_retention_keeps_newest_bundles(tmp_path):
-    oldest = _bundle(tmp_path, "oldest", mtime_ns=1)
-    middle = _bundle(tmp_path, "middle", mtime_ns=2)
-    newest = _bundle(tmp_path, "newest", mtime_ns=3)
+    oldest = _bundle(tmp_path, "oldest", mtime_ns=_ONE_SECOND_NS)
+    middle = _bundle(tmp_path, "middle", mtime_ns=2 * _ONE_SECOND_NS)
+    newest = _bundle(tmp_path, "newest", mtime_ns=3 * _ONE_SECOND_NS)
 
     result = enforce_repro_retention(tmp_path, max_bundles=2)
 
@@ -36,8 +39,8 @@ def test_retention_keeps_newest_bundles(tmp_path):
 
 
 def test_retention_uses_name_as_stable_tiebreaker(tmp_path):
-    beta = _bundle(tmp_path, "beta", mtime_ns=10)
-    alpha = _bundle(tmp_path, "alpha", mtime_ns=10)
+    beta = _bundle(tmp_path, "beta", mtime_ns=10 * _ONE_SECOND_NS)
+    alpha = _bundle(tmp_path, "alpha", mtime_ns=10 * _ONE_SECOND_NS)
 
     result = enforce_repro_retention(tmp_path, max_bundles=1)
 
@@ -46,8 +49,13 @@ def test_retention_uses_name_as_stable_tiebreaker(tmp_path):
 
 
 def test_retention_ignores_unknown_or_malformed_children(tmp_path):
-    valid = _bundle(tmp_path, "valid", mtime_ns=1)
-    unknown = _bundle(tmp_path, "unknown", mtime_ns=2, schema="future.v2")
+    valid = _bundle(tmp_path, "valid", mtime_ns=_ONE_SECOND_NS)
+    unknown = _bundle(
+        tmp_path,
+        "unknown",
+        mtime_ns=2 * _ONE_SECOND_NS,
+        schema="future.v2",
+    )
     malformed = tmp_path / "malformed"
     malformed.mkdir()
     (malformed / "input.bin").write_bytes(b"case")
@@ -70,7 +78,7 @@ def test_retention_does_not_follow_symlinked_bundle(tmp_path):
 
     outside = tmp_path / "outside"
     outside.mkdir()
-    target = _bundle(outside, "target", mtime_ns=1)
+    target = _bundle(outside, "target", mtime_ns=_ONE_SECOND_NS)
     root = tmp_path / "root"
     root.mkdir()
     link = root / "linked"
