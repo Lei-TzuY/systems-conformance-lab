@@ -99,19 +99,20 @@ def test_existing_destination_is_never_overwritten(tmp_path):
 
 
 def test_matching_comparison_is_rejected_without_creating_directory(tmp_path):
-    candidate = _result("same")
-    oracle = _result("same")
-    comparison = compare_results(candidate, oracle)
+    comparison = compare_results(_result("same"), _result("same"))
+    failing = compare_results(_result("candidate"), _result("oracle"))
+    signature = failure_signature(failing)
+    assert signature is not None
     destination = tmp_path / "case"
 
     with pytest.raises(ValueError):
         write_repro_bundle(
             destination,
             input_bytes=b"case",
-            candidate=candidate,
-            oracle=oracle,
+            candidate=_result("same"),
+            oracle=_result("same"),
             comparison=comparison,
-            signature=None,  # type: ignore[arg-type]
+            signature=signature,
         )
 
     assert not destination.exists()
