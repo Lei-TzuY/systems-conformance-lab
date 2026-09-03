@@ -73,7 +73,11 @@ def enforce_repro_retention(root: Path, *, max_bundles: int) -> RetentionResult:
             ignored.append(child)
             continue
         expected_size = input_record.get("size_bytes")
-        if isinstance(expected_size, bool) or not isinstance(expected_size, int) or expected_size < 0:
+        if (
+            isinstance(expected_size, bool)
+            or not isinstance(expected_size, int)
+            or expected_size < 0
+        ):
             ignored.append(child)
             continue
 
