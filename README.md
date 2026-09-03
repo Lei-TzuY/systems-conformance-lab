@@ -2,32 +2,73 @@
 
 A reusable systems-correctness laboratory for conformance testing, differential execution, fuzzing, fault injection, reduction, and reproducibility.
 
-The project is intentionally building the correctness substrate first. The current foundation is a safe argv-based process runner, a structured candidate/oracle comparator, stable failure signatures, a deterministic generic reducer loop, deterministic repro bundles, safe bundle-retention primitives, a bounded deterministic fuzz campaign driver, and a deterministic fault-injection controller that keeps system-specific fault behavior outside the core.
+## Current checkpoint
 
-## Current foundation
+The repository now has a bounded, target-independent correctness substrate plus one explicit integration boundary for real process targets. The core primitives remain independently usable, while `DifferentialHarness` composes target execution, comparison, stable failure identity, signature-preserving reduction predicates, and repro publication without absorbing target-specific generators or fault side effects.
+
+The stability boundary and deferred scope are documented in [`docs/stability-checkpoint.md`](docs/stability-checkpoint.md).
+
+### Core substrate
 
 - argv-only process execution (`shell=False`)
 - deterministic UTF-8/stdin byte input handling
 - timeout classification and process-tree cleanup
-- bounded stdout/stderr capture
-- exit-code / signal metadata
+- bounded stdout/stderr capture with total-size/truncation metadata
+- exit-code / signal / infrastructure-error metadata
 - JSON-serializable versioned execution records
 - deterministic candidate/oracle comparison
 - explicit `match`, `product_mismatch`, and `infrastructure_failure` classification
-- truncated-stream metadata comparison to avoid false equivalence
 - stable failure signatures for reducer/reproducer identity
-- deterministic first-improvement reduction with strict size progress
-- bounded reduction evaluation budget
-- reducer predicate exceptions remain visible as harness/infrastructure failures
+- deterministic first-improvement reduction with strict size progress and bounded evaluations
 - deterministic repro bundles with byte-for-byte input preservation
 - safe repro retention that only removes recognized direct-child bundles and never follows symlinks
-- deterministic index-driven fuzz case scheduling with a strict evaluation budget
-- first-failure capture that preserves product-vs-infrastructure classification
-- fuzz case generation/evaluator exceptions remain visible as harness failures
-- immutable fault specifications with explicit logical operation, occurrence, and kind
-- deterministic single-shot fault checkpoints that count only matching operations
-- fault controllers report trigger intent only; target-specific adapters own side effects and failure mapping
-- focused self-tests
+- deterministic index-driven fuzz scheduling with a strict evaluation budget
+- immutable fault specifications and deterministic single-shot logical-operation checkpoints
+- target-specific fault effects kept outside the generic controller
+
+### Integrated execution boundary
+
+`CommandTarget` snapshots one real process target configuration. `DifferentialHarness` then provides the shared execution path:
+
+```text
+input bytes
+    |
+    +--> candidate CommandTarget --> run_process --+
+    |                                             |
+    +--> oracle CommandTarget ----> run_process --+--> compare_results
+                                                       |
+                                                       +--> FailureSignature
+                                                       |
+                                                       +--> fuzz evaluate callback
+                                                       +--> reducer preserves-failure predicate
+                                                       +--> deterministic repro bundle
+```
+
+The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle.
+
+## Minimal usage
+
+```python
+import sys
+
+from systems_conformance import CommandTarget, DifferentialHarness
+
+candidate = CommandTarget((sys.executable, "candidate.py"))
+oracle = CommandTarget((sys.executable, "oracle.py"))
+harness = DifferentialHarness(candidate=candidate, oracle=oracle)
+
+result = harness.evaluate(b"test input\n")
+print(result.comparison.classification)
+print(result.signature)
+```
+
+`harness.compare` can be passed directly to `run_fuzz_campaign`. `harness.preserves_failure` is intended for reducers after a failure signature has been captured. `harness.write_repro` re-evaluates the minimized case and optionally rejects signature drift before publishing evidence.
+
+## Responsibility boundary
+
+The shared package owns correctness mechanics, not product semantics. Format-aware generators, mutators, corpora, normalization rules, concrete fault side effects, protocol/filesystem/compiler knowledge, and target lifecycle orchestration belong in adapters above this package. The generic fault controller reports deterministic trigger intent only; it deliberately does not kill processes, corrupt files, drop packets, or mutate target state itself.
+
+This checkpoint does **not** add a new conformance domain, distributed scheduler, coverage-guided fuzzer, symbolic executor, target-specific mutation engine, or fault backend. Those are separate architecture phases and should only be introduced when a concrete repository integration requires them.
 
 ## Development
 
@@ -36,5 +77,3 @@ python -m pip install -e '.[dev]'
 pytest
 ruff check .
 ```
-
-The core runner, comparator, failure signatures, reducer, repro writer, retention policy, fuzz campaign driver, and fault controller are deliberately target-independent. Project-specific adapters, format-aware generators, mutators, corpora, and concrete fault behaviors belong above them rather than inside the shared correctness substrate.
