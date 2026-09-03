@@ -42,7 +42,11 @@ def test_write_repro_bundle_preserves_input_and_manifest(tmp_path):
     manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
     assert manifest["input"] == {"path": "input.bin", "size_bytes": 8}
     assert manifest["comparison"]["classification"] == "product_mismatch"
-    assert manifest["failure_signature"] == signature.to_dict()
+    assert manifest["failure_signature"] == {
+        "dimensions": list(signature.dimensions),
+        "kind": signature.kind,
+        "schema_version": signature.schema_version,
+    }
     assert manifest["metadata"] == {"adapter": "example"}
 
 
