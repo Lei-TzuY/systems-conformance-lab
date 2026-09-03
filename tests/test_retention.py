@@ -1,5 +1,5 @@
 import json
-import os
+from os import utime
 
 import pytest
 
@@ -26,7 +26,7 @@ def _bundle(
     }
     manifest_path = path / "manifest.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    os.utime(manifest_path, ns=(mtime_ns, mtime_ns))
+    utime(manifest_path, ns=(mtime_ns, mtime_ns))
     return path
 
 
@@ -93,9 +93,6 @@ def test_retention_ignores_bundle_with_mismatched_input_size(tmp_path):
 
 
 def test_retention_does_not_follow_symlinked_bundle(tmp_path):
-    if not hasattr(os, "symlink"):
-        pytest.skip("symlinks unsupported")
-
     outside = tmp_path / "outside"
     outside.mkdir()
     target = _bundle(outside, "target", mtime_ns=_ONE_SECOND_NS)
