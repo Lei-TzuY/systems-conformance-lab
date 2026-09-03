@@ -72,8 +72,15 @@ def enforce_repro_retention(root: Path, *, max_bundles: int) -> RetentionResult:
         if not isinstance(input_record, dict) or input_record.get("path") != "input.bin":
             ignored.append(child)
             continue
+        expected_size = input_record.get("size_bytes")
+        if isinstance(expected_size, bool) or not isinstance(expected_size, int) or expected_size < 0:
+            ignored.append(child)
+            continue
 
         try:
+            if input_path.stat().st_size != expected_size:
+                ignored.append(child)
+                continue
             manifest_mtime_ns = manifest_path.stat().st_mtime_ns
         except OSError:
             ignored.append(child)
