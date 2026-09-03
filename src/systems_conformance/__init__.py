@@ -1,5 +1,6 @@
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
+from .fuzz import FuzzCampaignResult, run_fuzz_campaign
 from .model import ExecutionResult, StreamCapture
 from .reducer import ReductionResult, reduce_case
 from .repro import ReproBundle, write_repro_bundle
@@ -10,6 +11,7 @@ __all__ = [
     "ComparisonResult",
     "ExecutionResult",
     "FailureSignature",
+    "FuzzCampaignResult",
     "ReductionResult",
     "ReproBundle",
     "RetentionResult",
@@ -18,6 +20,7 @@ __all__ = [
     "enforce_repro_retention",
     "failure_signature",
     "reduce_case",
+    "run_fuzz_campaign",
     "run_process",
     "write_repro_bundle",
 ]
