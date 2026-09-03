@@ -1,5 +1,6 @@
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
+from .fault import FaultController, FaultSpec
 from .fuzz import FuzzCampaignResult, run_fuzz_campaign
 from .model import ExecutionResult, StreamCapture
 from .reducer import ReductionResult, reduce_case
@@ -11,6 +12,8 @@ __all__ = [
     "ComparisonResult",
     "ExecutionResult",
     "FailureSignature",
+    "FaultController",
+    "FaultSpec",
     "FuzzCampaignResult",
     "ReductionResult",
     "ReproBundle",
