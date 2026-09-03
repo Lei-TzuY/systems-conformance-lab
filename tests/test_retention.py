@@ -1,5 +1,5 @@
 import json
-from os import utime
+import os
 
 import pytest
 
@@ -26,7 +26,7 @@ def _bundle(
     }
     manifest_path = path / "manifest.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    utime(manifest_path, ns=(mtime_ns, mtime_ns))
+    os.utime(manifest_path, ns=(mtime_ns, mtime_ns))
     return path
 
 
