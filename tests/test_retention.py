@@ -78,6 +78,20 @@ def test_retention_ignores_unknown_or_malformed_children(tmp_path):
     assert marker.read_text(encoding="utf-8") == "keep"
 
 
+def test_retention_ignores_bundle_with_mismatched_input_size(tmp_path):
+    mismatched = _bundle(tmp_path, "mismatched", mtime_ns=_ONE_SECOND_NS)
+    manifest_path = mismatched / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["input"]["size_bytes"] = 99
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    result = enforce_repro_retention(tmp_path, max_bundles=0)
+
+    assert result.removed == ()
+    assert result.ignored == (mismatched,)
+    assert mismatched.exists()
+
+
 def test_retention_does_not_follow_symlinked_bundle(tmp_path):
     if not hasattr(os, "symlink"):
         pytest.skip("symlinks unsupported")
