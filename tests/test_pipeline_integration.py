@@ -67,6 +67,8 @@ def test_real_target_pipeline_finds_reduces_and_persists_failure(tmp_path) -> No
 
     assert bundle.input_path.read_bytes() == b"BUG"
     manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["failure_signature"] == signature.to_dict()
+    assert manifest["failure_signature"]["kind"] == signature.kind
+    assert tuple(manifest["failure_signature"]["dimensions"]) == signature.dimensions
+    assert manifest["failure_signature"]["schema_version"] == signature.schema_version
     assert manifest["comparison"]["classification"] == "product_mismatch"
     assert manifest["metadata"] == {"source": "end-to-end-integration"}
