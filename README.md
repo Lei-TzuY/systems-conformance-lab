@@ -2,7 +2,7 @@
 
 A reusable systems-correctness laboratory for conformance testing, differential execution, fuzzing, fault injection, reduction, and reproducibility.
 
-The project is intentionally building the correctness substrate first. The current foundation is a safe argv-based process runner, a structured candidate/oracle comparator, stable failure signatures, a deterministic generic reducer loop, deterministic repro bundles, safe bundle-retention primitives, and a bounded deterministic fuzz campaign driver that keeps infrastructure failures distinct from product mismatches.
+The project is intentionally building the correctness substrate first. The current foundation is a safe argv-based process runner, a structured candidate/oracle comparator, stable failure signatures, a deterministic generic reducer loop, deterministic repro bundles, safe bundle-retention primitives, a bounded deterministic fuzz campaign driver, and a deterministic fault-injection controller that keeps system-specific fault behavior outside the core.
 
 ## Current foundation
 
@@ -24,6 +24,9 @@ The project is intentionally building the correctness substrate first. The curre
 - deterministic index-driven fuzz case scheduling with a strict evaluation budget
 - first-failure capture that preserves product-vs-infrastructure classification
 - fuzz case generation/evaluator exceptions remain visible as harness failures
+- immutable fault specifications with explicit logical operation, occurrence, and kind
+- deterministic single-shot fault checkpoints that count only matching operations
+- fault controllers report trigger intent only; target-specific adapters own side effects and failure mapping
 - focused self-tests
 
 ## Development
@@ -34,4 +37,4 @@ pytest
 ruff check .
 ```
 
-The core runner, comparator, failure signatures, reducer, repro writer, retention policy, and fuzz campaign driver are deliberately target-independent. Project-specific adapters, format-aware generators, mutators, corpora, and fault injection policies belong above them rather than inside the shared correctness substrate.
+The core runner, comparator, failure signatures, reducer, repro writer, retention policy, fuzz campaign driver, and fault controller are deliberately target-independent. Project-specific adapters, format-aware generators, mutators, corpora, and concrete fault behaviors belong above them rather than inside the shared correctness substrate.
