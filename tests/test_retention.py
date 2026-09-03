@@ -12,7 +12,13 @@ from systems_conformance.retention import enforce_repro_retention
 _ONE_SECOND_NS = 1_000_000_000
 
 
-def _bundle(root, name: str, *, mtime_ns: int, schema: str = REPRO_BUNDLE_SCHEMA_VERSION):
+def _bundle(
+    root,
+    name: str,
+    *,
+    mtime_ns: int,
+    schema: str = REPRO_BUNDLE_SCHEMA_VERSION,
+):
     path = root / name
     path.mkdir()
     (path / "input.bin").write_bytes(b"case")
