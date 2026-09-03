@@ -2,7 +2,6 @@ import json
 import os
 
 import pytest
-
 from systems_conformance.repro import REPRO_BUNDLE_SCHEMA_VERSION
 from systems_conformance.retention import enforce_repro_retention
 
