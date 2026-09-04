@@ -60,6 +60,49 @@ def test_output_capture_is_bounded_but_reports_total_size() -> None:
     assert result.stdout.truncated is True
 
 
+def test_hard_output_budget_stops_untrusted_output() -> None:
+    result = run_process(
+        python(
+            "import sys\n"
+            "chunk = b'x' * 65536\n"
+            "while True:\n"
+            "    sys.stdout.buffer.write(chunk)\n"
+            "    sys.stdout.buffer.flush()\n"
+        ),
+        timeout_seconds=5,
+        max_output_bytes=128,
+        max_total_output_bytes=128 * 1024,
+    )
+
+    assert result.timed_out is False
+    assert result.infrastructure_error is not None
+    assert result.infrastructure_error.startswith("OutputLimitExceeded:")
+    assert len(result.stdout.text.encode()) <= 128
+    assert result.stdout.total_bytes > 128 * 1024
+    assert result.stdout.truncated is True
+
+
+def test_hard_output_budget_counts_stdout_and_stderr_together() -> None:
+    result = run_process(
+        python(
+            "import sys\n"
+            "sys.stdout.buffer.write(b'o' * 70000)\n"
+            "sys.stdout.buffer.flush()\n"
+            "sys.stderr.buffer.write(b'e' * 70000)\n"
+            "sys.stderr.buffer.flush()\n"
+            "import time; time.sleep(30)\n"
+        ),
+        timeout_seconds=5,
+        max_output_bytes=64,
+        max_total_output_bytes=128 * 1024,
+    )
+
+    assert result.timed_out is False
+    assert result.infrastructure_error is not None
+    assert result.infrastructure_error.startswith("OutputLimitExceeded:")
+    assert result.stdout.total_bytes + result.stderr.total_bytes > 128 * 1024
+
+
 def test_missing_executable_is_infrastructure_error() -> None:
     result = run_process(["definitely-not-a-real-systems-conformance-command"])
 
@@ -81,6 +124,7 @@ def test_result_is_json_serializable_and_versioned() -> None:
     [
         ({"timeout_seconds": 0}, "timeout_seconds"),
         ({"max_output_bytes": -1}, "max_output_bytes"),
+        ({"max_total_output_bytes": 0}, "max_total_output_bytes"),
     ],
 )
 def test_rejects_invalid_limits(kwargs: dict[str, object], message: str) -> None:
