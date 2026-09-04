@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -68,6 +70,13 @@ class CommandTarget:
             max_output_bytes=max_output_bytes,
         )
 
+    def _replay_identity(self) -> dict[str, object]:
+        return {
+            "argv": list(self.argv),
+            "cwd": self.cwd,
+            "env": None if self.env is None else [list(item) for item in self.env],
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class DifferentialRun:
@@ -112,6 +121,23 @@ class DifferentialHarness:
             raise ValueError("timeout_seconds must be positive")
         if self.max_output_bytes < 0:
             raise ValueError("max_output_bytes must be non-negative")
+
+    @property
+    def replay_context_sha256(self) -> str:
+        """Return a non-disclosing fingerprint of execution-affecting configuration."""
+        context = {
+            "candidate": self.candidate._replay_identity(),
+            "oracle": self.oracle._replay_identity(),
+            "timeout_seconds": self.timeout_seconds,
+            "max_output_bytes": self.max_output_bytes,
+        }
+        canonical = json.dumps(
+            context,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+        return hashlib.sha256(canonical).hexdigest()
 
     def evaluate(self, input_bytes: bytes) -> DifferentialRun:
         """Execute both targets and return one stable differential result."""
@@ -172,6 +198,7 @@ class DifferentialHarness:
             comparison=result.comparison,
             signature=result.signature,
             metadata=metadata,
+            replay_context_sha256=self.replay_context_sha256,
         )
 
     def replay_repro(
@@ -180,11 +207,25 @@ class DifferentialHarness:
         *,
         max_input_bytes: int = 16 * 1024 * 1024,
         max_manifest_bytes: int = 1024 * 1024,
+        require_same_context: bool = True,
     ) -> ReproReplay:
-        """Safely load a repro bundle and execute its input against this harness."""
+        """Safely load a repro bundle and execute its input against this harness.
+
+        Harness-written bundles carry a SHA-256 fingerprint over the candidate,
+        oracle, timeout, and output-limit configuration. The fingerprint contains
+        no raw argv/env/cwd values. By default replay rejects a different context
+        before executing untrusted input. Callers may explicitly disable this
+        check when intentionally testing a reproducer against a changed target.
+        """
         bundle = load_repro_bundle(
             path,
             max_input_bytes=max_input_bytes,
             max_manifest_bytes=max_manifest_bytes,
         )
+        if (
+            require_same_context
+            and bundle.replay_context_sha256 is not None
+            and bundle.replay_context_sha256 != self.replay_context_sha256
+        ):
+            raise ValueError("repro replay context does not match this harness")
         return ReproReplay(bundle=bundle, run=self.evaluate(bundle.input_bytes))
