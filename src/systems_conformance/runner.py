@@ -54,7 +54,7 @@ class _StreamAccumulator:
 
 def _drain_stream(stream: BinaryIO, accumulator: _StreamAccumulator) -> None:
     try:
-        while chunk := stream.read(_READ_CHUNK_BYTES):
+        while chunk := os.read(stream.fileno(), _READ_CHUNK_BYTES):
             accumulator.feed(chunk)
     except (OSError, ValueError):
         return
