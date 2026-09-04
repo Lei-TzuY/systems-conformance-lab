@@ -84,8 +84,9 @@ def load_repro_bundle(
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
     ``input.bin``. Symlinks, oversized artifacts, schema drift, declared
-    input-size mismatches, and input-content digest mismatches are rejected
-    before execution.
+    input-size mismatches, and present input-content digest mismatches are
+    rejected before execution. Older v1 bundles without a digest remain
+    loadable for replay compatibility.
     """
 
     if max_input_bytes < 0:
@@ -132,14 +133,20 @@ def load_repro_bundle(
     if input_path.stat().st_size != declared_size:
         raise ValueError("repro input size does not match manifest metadata")
 
-    expected_sha256 = _load_sha256(
-        input_record.get("sha256"),
-        label="repro input sha256",
-    )
+    expected_sha256_value = input_record.get("sha256")
+    expected_sha256 = None
+    if expected_sha256_value is not None:
+        expected_sha256 = _load_sha256(
+            expected_sha256_value,
+            label="repro input sha256",
+        )
     input_bytes = input_path.read_bytes()
     if len(input_bytes) != declared_size:
         raise ValueError("repro input changed while being loaded")
-    if hashlib.sha256(input_bytes).hexdigest() != expected_sha256:
+    if (
+        expected_sha256 is not None
+        and hashlib.sha256(input_bytes).hexdigest() != expected_sha256
+    ):
         raise ValueError("repro input SHA-256 does not match manifest metadata")
 
     for field in ("candidate", "oracle", "comparison"):
