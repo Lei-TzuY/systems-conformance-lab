@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 
 import pytest
@@ -67,11 +68,13 @@ def test_replay_reports_signature_drift_when_context_check_is_explicitly_disable
 
 def test_replay_context_hash_does_not_disclose_explicit_environment(tmp_path) -> None:
     secret = "do-not-persist-this-value"
+    candidate_env = dict(os.environ)
+    candidate_env["REPRO_TEST_SECRET"] = secret
     candidate = CommandTarget(
         (sys.executable, "-c", BUGGY_SCRIPT),
-        env={"REPRO_TEST_SECRET": secret},
+        env=candidate_env,
     )
-    oracle = CommandTarget((sys.executable, "-c", ECHO_SCRIPT), env={})
+    oracle = CommandTarget((sys.executable, "-c", ECHO_SCRIPT), env=dict(os.environ))
     harness = DifferentialHarness(candidate=candidate, oracle=oracle)
     bundle = harness.write_repro(tmp_path / "repro", input_bytes=b"BUG")
 
