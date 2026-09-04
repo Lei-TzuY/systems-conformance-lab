@@ -9,12 +9,7 @@ from typing import Any
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
 from .model import ExecutionResult
-from .repro import (
-    LoadedReproBundle,
-    ReproBundle,
-    load_repro_bundle,
-    write_repro_bundle,
-)
+from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
 from .runner import DEFAULT_MAX_OUTPUT_BYTES, run_process
 
 
