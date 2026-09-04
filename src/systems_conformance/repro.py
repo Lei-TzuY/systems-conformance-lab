@@ -30,6 +30,7 @@ class LoadedReproBundle:
     input_bytes: bytes
     signature: FailureSignature
     metadata: dict[str, Any]
+    replay_context_sha256: str | None = None
     schema_version: str = REPRO_BUNDLE_SCHEMA_VERSION
 
 
@@ -55,6 +56,16 @@ def _load_failure_signature(value: object) -> FailureSignature:
         raise ValueError("failure signature dimensions must be a list of strings")
 
     return FailureSignature(kind=kind, dimensions=tuple(dimensions))
+
+
+def _load_replay_context_sha256(value: object) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise TypeError("replay_context_sha256 must be a string or null")
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise ValueError("replay_context_sha256 must be a lowercase SHA-256 hex digest")
+    return value
 
 
 def load_repro_bundle(
@@ -132,6 +143,9 @@ def load_repro_bundle(
         input_bytes=input_bytes,
         signature=_load_failure_signature(manifest.get("failure_signature")),
         metadata=metadata,
+        replay_context_sha256=_load_replay_context_sha256(
+            manifest.get("replay_context_sha256")
+        ),
     )
 
 
@@ -144,6 +158,7 @@ def write_repro_bundle(
     comparison: ComparisonResult,
     signature: FailureSignature,
     metadata: dict[str, Any] | None = None,
+    replay_context_sha256: str | None = None,
 ) -> ReproBundle:
     """Write a self-contained, deterministic reproducer bundle.
 
@@ -159,6 +174,7 @@ def write_repro_bundle(
         raise ValueError("cannot create a repro bundle for a matching comparison")
     if metadata is not None and not isinstance(metadata, dict):
         raise TypeError("metadata must be a dict or None")
+    replay_context_sha256 = _load_replay_context_sha256(replay_context_sha256)
 
     destination.mkdir(parents=True)
     input_path = destination / "input.bin"
@@ -175,6 +191,8 @@ def write_repro_bundle(
             "failure_signature": signature.to_dict(),
             "metadata": {} if metadata is None else metadata,
         }
+        if replay_context_sha256 is not None:
+            manifest["replay_context_sha256"] = replay_context_sha256
         manifest_path.write_text(
             json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
             encoding="utf-8",
