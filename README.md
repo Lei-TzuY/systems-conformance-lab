@@ -21,8 +21,9 @@ The stability boundary and deferred scope are documented in [`docs/stability-che
 - stable failure signatures for reducer/reproducer identity
 - deterministic first-improvement reduction with strict size progress and bounded evaluations
 - deterministic repro bundles with byte-for-byte input preservation
+- SHA-256 input-content binding for newly written repros, with legacy v1 digestless replay compatibility
 - safe repro retention that only removes recognized direct-child bundles and never follows symlinks
-- bounded repro loading that validates schema, direct-child layout, artifact sizes, and stable failure identity before replay
+- bounded repro loading that validates schema, direct-child layout, artifact sizes, input digests when present, and stable failure identity before replay
 - non-disclosing SHA-256 replay-context binding for harness-written repros, covering candidate/oracle configuration plus timeout/output limits
 - deterministic index-driven fuzz scheduling with a strict evaluation budget
 - immutable fault specifications and deterministic single-shot logical-operation checkpoints
@@ -47,7 +48,7 @@ input bytes
                                                        +--> validated, context-bound repro replay
 ```
 
-The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle. Replay tests then reload persisted evidence through the bounded loader and verify the same real-process failure identity. Harness-written bundles also carry a SHA-256 fingerprint of execution-affecting target settings, allowing replay to reject an accidentally different target context before untrusted input executes. The fingerprint does not persist raw argv, cwd, or environment values.
+The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle. Replay tests then reload persisted evidence through the bounded loader and verify the same real-process failure identity. Newly written bundles bind `input.bin` to the manifest with SHA-256 so same-size input corruption is rejected before a target executes, while older v1 bundles without that additive field remain replayable. Harness-written bundles also carry a SHA-256 fingerprint of execution-affecting target settings, allowing replay to reject an accidentally different target context before untrusted input executes. The fingerprint does not persist raw argv, cwd, or environment values.
 
 ## Minimal usage
 

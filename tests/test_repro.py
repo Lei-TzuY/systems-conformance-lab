@@ -40,7 +40,11 @@ def test_write_repro_bundle_preserves_input_and_manifest(tmp_path):
 
     assert bundle.input_path.read_bytes() == b"\x00source\xff"
     manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
-    assert manifest["input"] == {"path": "input.bin", "size_bytes": 8}
+    assert manifest["input"] == {
+        "path": "input.bin",
+        "sha256": "ac086904e5eec590d28871f81ca952b150ba1d77aca8fcfbdd2404d70df4633b",
+        "size_bytes": 8,
+    }
     assert manifest["comparison"]["classification"] == "product_mismatch"
     assert manifest["failure_signature"] == {
         "dimensions": list(signature.dimensions),
