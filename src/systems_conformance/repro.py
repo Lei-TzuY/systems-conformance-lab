@@ -40,7 +40,7 @@ def _require_regular_file(path: Path, *, label: str) -> None:
 
 def _load_failure_signature(value: object) -> FailureSignature:
     if not isinstance(value, dict):
-        raise ValueError("failure_signature must be an object")
+        raise TypeError("failure_signature must be an object")
     if value.get("schema_version") != FAILURE_SIGNATURE_SCHEMA_VERSION:
         raise ValueError("unsupported failure signature schema")
 
@@ -95,19 +95,19 @@ def load_repro_bundle(
         raise ValueError("repro manifest is not valid UTF-8 JSON") from exc
 
     if not isinstance(manifest, dict):
-        raise ValueError("repro manifest must be an object")
+        raise TypeError("repro manifest must be an object")
     if manifest.get("schema_version") != REPRO_BUNDLE_SCHEMA_VERSION:
         raise ValueError("unsupported repro bundle schema")
 
     input_record = manifest.get("input")
     if not isinstance(input_record, dict):
-        raise ValueError("repro input metadata must be an object")
+        raise TypeError("repro input metadata must be an object")
     if input_record.get("path") != "input.bin":
         raise ValueError("repro input path must be the direct child input.bin")
 
     declared_size = input_record.get("size_bytes")
     if not isinstance(declared_size, int) or isinstance(declared_size, bool):
-        raise ValueError("repro input size_bytes must be an integer")
+        raise TypeError("repro input size_bytes must be an integer")
     if declared_size < 0:
         raise ValueError("repro input size_bytes must be non-negative")
     if declared_size > max_input_bytes:
@@ -121,11 +121,11 @@ def load_repro_bundle(
 
     for field in ("candidate", "oracle", "comparison"):
         if not isinstance(manifest.get(field), dict):
-            raise ValueError(f"repro {field} record must be an object")
+            raise TypeError(f"repro {field} record must be an object")
 
     metadata = manifest.get("metadata")
     if not isinstance(metadata, dict):
-        raise ValueError("repro metadata must be an object")
+        raise TypeError("repro metadata must be an object")
 
     return LoadedReproBundle(
         path=path,
