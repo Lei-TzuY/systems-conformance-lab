@@ -23,6 +23,7 @@ The stability boundary and deferred scope are documented in [`docs/stability-che
 - deterministic repro bundles with byte-for-byte input preservation
 - safe repro retention that only removes recognized direct-child bundles and never follows symlinks
 - bounded repro loading that validates schema, direct-child layout, artifact sizes, and stable failure identity before replay
+- non-disclosing SHA-256 replay-context binding for harness-written repros, covering candidate/oracle configuration plus timeout/output limits
 - deterministic index-driven fuzz scheduling with a strict evaluation budget
 - immutable fault specifications and deterministic single-shot logical-operation checkpoints
 - target-specific fault effects kept outside the generic controller
@@ -43,10 +44,10 @@ input bytes
                                                        +--> fuzz evaluate callback
                                                        +--> reducer preserves-failure predicate
                                                        +--> deterministic repro bundle
-                                                       +--> validated repro replay
+                                                       +--> validated, context-bound repro replay
 ```
 
-The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle. Replay tests then reload persisted evidence through the bounded loader and verify the same real-process failure identity, while signature drift remains explicit rather than being relabeled as a product failure.
+The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle. Replay tests then reload persisted evidence through the bounded loader and verify the same real-process failure identity. Harness-written bundles also carry a SHA-256 fingerprint of execution-affecting target settings, allowing replay to reject an accidentally different target context before untrusted input executes. The fingerprint does not persist raw argv, cwd, or environment values.
 
 ## Minimal usage
 
@@ -64,7 +65,7 @@ print(result.comparison.classification)
 print(result.signature)
 ```
 
-`harness.compare` can be passed directly to `run_fuzz_campaign`. `harness.preserves_failure` is intended for reducers after a failure signature has been captured. `harness.write_repro` re-evaluates the minimized case and optionally rejects signature drift before publishing evidence. `harness.replay_repro` first validates the persisted bundle and then reports whether a fresh real-process execution preserves its stable failure signature.
+`harness.compare` can be passed directly to `run_fuzz_campaign`. `harness.preserves_failure` is intended for reducers after a failure signature has been captured. `harness.write_repro` re-evaluates the minimized case and optionally rejects signature drift before publishing evidence. `harness.replay_repro` first validates the persisted bundle, checks the replay-context fingerprint by default, and then reports whether a fresh real-process execution preserves its stable failure signature. Set `require_same_context=False` only when intentionally testing evidence against a changed target configuration.
 
 ## Responsibility boundary
 
