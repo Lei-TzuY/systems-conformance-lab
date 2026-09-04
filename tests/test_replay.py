@@ -126,6 +126,25 @@ def test_loader_rejects_declared_input_size_mismatch(tmp_path) -> None:
         load_repro_bundle(bundle.path)
 
 
+def test_loader_rejects_same_size_input_tampering_before_execution(tmp_path) -> None:
+    marker = tmp_path / "executed"
+    marker_script = (
+        f"from pathlib import Path; Path({str(marker)!r}).write_text('ran'); "
+        + BUGGY_SCRIPT
+    )
+    harness = DifferentialHarness(candidate=target(marker_script), oracle=target(ECHO_SCRIPT))
+    bundle = harness.write_repro(tmp_path / "repro", input_bytes=b"BUG")
+    assert marker.exists()
+    marker.unlink()
+
+    bundle.input_path.write_bytes(b"XYZ")
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        harness.replay_repro(bundle.path)
+
+    assert not marker.exists()
+
+
 def test_loader_rejects_malformed_replay_context_hash(tmp_path) -> None:
     harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
     bundle = harness.write_repro(tmp_path / "repro", input_bytes=b"BUG")
