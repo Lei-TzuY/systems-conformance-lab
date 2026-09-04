@@ -1,3 +1,4 @@
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -58,14 +59,18 @@ def _load_failure_signature(value: object) -> FailureSignature:
     return FailureSignature(kind=kind, dimensions=tuple(dimensions))
 
 
+def _load_sha256(value: object, *, label: str) -> str:
+    if not isinstance(value, str):
+        raise TypeError(f"{label} must be a string")
+    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
+        raise ValueError(f"{label} must be a lowercase SHA-256 hex digest")
+    return value
+
+
 def _load_replay_context_sha256(value: object) -> str | None:
     if value is None:
         return None
-    if not isinstance(value, str):
-        raise TypeError("replay_context_sha256 must be a string or null")
-    if len(value) != 64 or any(character not in "0123456789abcdef" for character in value):
-        raise ValueError("replay_context_sha256 must be a lowercase SHA-256 hex digest")
-    return value
+    return _load_sha256(value, label="replay_context_sha256")
 
 
 def load_repro_bundle(
@@ -78,8 +83,9 @@ def load_repro_bundle(
 
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
-    ``input.bin``. Symlinks, oversized artifacts, schema drift, and declared
-    input-size mismatches are rejected before execution.
+    ``input.bin``. Symlinks, oversized artifacts, schema drift, declared
+    input-size mismatches, and input-content digest mismatches are rejected
+    before execution.
     """
 
     if max_input_bytes < 0:
@@ -126,9 +132,15 @@ def load_repro_bundle(
     if input_path.stat().st_size != declared_size:
         raise ValueError("repro input size does not match manifest metadata")
 
+    expected_sha256 = _load_sha256(
+        input_record.get("sha256"),
+        label="repro input sha256",
+    )
     input_bytes = input_path.read_bytes()
     if len(input_bytes) != declared_size:
         raise ValueError("repro input changed while being loaded")
+    if hashlib.sha256(input_bytes).hexdigest() != expected_sha256:
+        raise ValueError("repro input SHA-256 does not match manifest metadata")
 
     for field in ("candidate", "oracle", "comparison"):
         if not isinstance(manifest.get(field), dict):
@@ -164,7 +176,8 @@ def write_repro_bundle(
 
     Existing destinations are rejected so evidence cannot be silently
     overwritten. The manifest deliberately uses relative artifact names and
-    sorted JSON keys, while the original input is retained byte-for-byte.
+    sorted JSON keys, while the original input is retained byte-for-byte and
+    bound to its manifest with a SHA-256 content digest.
     """
 
     destination = Path(destination)
@@ -184,7 +197,11 @@ def write_repro_bundle(
         input_path.write_bytes(input_bytes)
         manifest = {
             "schema_version": REPRO_BUNDLE_SCHEMA_VERSION,
-            "input": {"path": input_path.name, "size_bytes": len(input_bytes)},
+            "input": {
+                "path": input_path.name,
+                "sha256": hashlib.sha256(input_bytes).hexdigest(),
+                "size_bytes": len(input_bytes),
+            },
             "candidate": candidate.to_dict(),
             "oracle": oracle.to_dict(),
             "comparison": comparison.to_dict(),
