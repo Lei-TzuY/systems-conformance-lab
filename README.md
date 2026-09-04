@@ -4,7 +4,7 @@ A reusable systems-correctness laboratory for conformance testing, differential 
 
 ## Current checkpoint
 
-The repository now has a bounded, target-independent correctness substrate plus one explicit integration boundary for real process targets. The core primitives remain independently usable, while `DifferentialHarness` composes target execution, comparison, stable failure identity, signature-preserving reduction predicates, and repro publication without absorbing target-specific generators or fault side effects.
+The repository now has a bounded, target-independent correctness substrate plus one explicit integration boundary for real process targets. The core primitives remain independently usable, while `DifferentialHarness` composes target execution, comparison, stable failure identity, signature-preserving reduction predicates, repro publication, and safe repro replay without absorbing target-specific generators or fault side effects.
 
 The stability boundary and deferred scope are documented in [`docs/stability-checkpoint.md`](docs/stability-checkpoint.md).
 
@@ -22,6 +22,7 @@ The stability boundary and deferred scope are documented in [`docs/stability-che
 - deterministic first-improvement reduction with strict size progress and bounded evaluations
 - deterministic repro bundles with byte-for-byte input preservation
 - safe repro retention that only removes recognized direct-child bundles and never follows symlinks
+- bounded repro loading that validates schema, direct-child layout, artifact sizes, and stable failure identity before replay
 - deterministic index-driven fuzz scheduling with a strict evaluation budget
 - immutable fault specifications and deterministic single-shot logical-operation checkpoints
 - target-specific fault effects kept outside the generic controller
@@ -42,9 +43,10 @@ input bytes
                                                        +--> fuzz evaluate callback
                                                        +--> reducer preserves-failure predicate
                                                        +--> deterministic repro bundle
+                                                       +--> validated repro replay
 ```
 
-The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle.
+The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle. Replay tests then reload persisted evidence through the bounded loader and verify the same real-process failure identity, while signature drift remains explicit rather than being relabeled as a product failure.
 
 ## Minimal usage
 
@@ -62,7 +64,7 @@ print(result.comparison.classification)
 print(result.signature)
 ```
 
-`harness.compare` can be passed directly to `run_fuzz_campaign`. `harness.preserves_failure` is intended for reducers after a failure signature has been captured. `harness.write_repro` re-evaluates the minimized case and optionally rejects signature drift before publishing evidence.
+`harness.compare` can be passed directly to `run_fuzz_campaign`. `harness.preserves_failure` is intended for reducers after a failure signature has been captured. `harness.write_repro` re-evaluates the minimized case and optionally rejects signature drift before publishing evidence. `harness.replay_repro` first validates the persisted bundle and then reports whether a fresh real-process execution preserves its stable failure signature.
 
 ## Responsibility boundary
 

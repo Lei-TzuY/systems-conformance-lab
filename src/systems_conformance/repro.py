@@ -4,10 +4,12 @@ from pathlib import Path
 from typing import Any
 
 from .comparator import ComparisonResult
-from .failure import FailureSignature
+from .failure import FAILURE_SIGNATURE_SCHEMA_VERSION, FailureSignature
 from .model import ExecutionResult
 
 REPRO_BUNDLE_SCHEMA_VERSION = "systems-conformance.repro-bundle.v1"
+DEFAULT_MAX_REPRO_INPUT_BYTES = 16 * 1024 * 1024
+DEFAULT_MAX_REPRO_MANIFEST_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +20,119 @@ class ReproBundle:
     manifest_path: Path
     input_path: Path
     schema_version: str = REPRO_BUNDLE_SCHEMA_VERSION
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedReproBundle:
+    """Validated replay inputs loaded from one reproducer bundle."""
+
+    path: Path
+    input_bytes: bytes
+    signature: FailureSignature
+    metadata: dict[str, Any]
+    schema_version: str = REPRO_BUNDLE_SCHEMA_VERSION
+
+
+def _require_regular_file(path: Path, *, label: str) -> None:
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"{label} must be a regular file: {path}")
+
+
+def _load_failure_signature(value: object) -> FailureSignature:
+    if not isinstance(value, dict):
+        raise TypeError("failure_signature must be an object")
+    if value.get("schema_version") != FAILURE_SIGNATURE_SCHEMA_VERSION:
+        raise ValueError("unsupported failure signature schema")
+
+    kind = value.get("kind")
+    if kind not in {"product_mismatch", "infrastructure_failure"}:
+        raise ValueError("invalid failure signature kind")
+
+    dimensions = value.get("dimensions")
+    if not isinstance(dimensions, list) or not all(
+        isinstance(item, str) for item in dimensions
+    ):
+        raise ValueError("failure signature dimensions must be a list of strings")
+
+    return FailureSignature(kind=kind, dimensions=tuple(dimensions))
+
+
+def load_repro_bundle(
+    path: Path,
+    *,
+    max_input_bytes: int = DEFAULT_MAX_REPRO_INPUT_BYTES,
+    max_manifest_bytes: int = DEFAULT_MAX_REPRO_MANIFEST_BYTES,
+) -> LoadedReproBundle:
+    """Load and validate a repro bundle before replaying untrusted evidence.
+
+    Replay accepts only the deterministic v1 layout emitted by
+    :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
+    ``input.bin``. Symlinks, oversized artifacts, schema drift, and declared
+    input-size mismatches are rejected before execution.
+    """
+
+    if max_input_bytes < 0:
+        raise ValueError("max_input_bytes must be non-negative")
+    if max_manifest_bytes <= 0:
+        raise ValueError("max_manifest_bytes must be positive")
+
+    path = Path(path)
+    if path.is_symlink() or not path.is_dir():
+        raise ValueError(f"repro bundle path must be a directory: {path}")
+
+    manifest_path = path / "manifest.json"
+    input_path = path / "input.bin"
+    _require_regular_file(manifest_path, label="repro manifest")
+    _require_regular_file(input_path, label="repro input")
+
+    manifest_size = manifest_path.stat().st_size
+    if manifest_size > max_manifest_bytes:
+        raise ValueError("repro manifest exceeds max_manifest_bytes")
+
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ValueError("repro manifest is not valid UTF-8 JSON") from exc
+
+    if not isinstance(manifest, dict):
+        raise TypeError("repro manifest must be an object")
+    if manifest.get("schema_version") != REPRO_BUNDLE_SCHEMA_VERSION:
+        raise ValueError("unsupported repro bundle schema")
+
+    input_record = manifest.get("input")
+    if not isinstance(input_record, dict):
+        raise TypeError("repro input metadata must be an object")
+    if input_record.get("path") != "input.bin":
+        raise ValueError("repro input path must be the direct child input.bin")
+
+    declared_size = input_record.get("size_bytes")
+    if not isinstance(declared_size, int) or isinstance(declared_size, bool):
+        raise TypeError("repro input size_bytes must be an integer")
+    if declared_size < 0:
+        raise ValueError("repro input size_bytes must be non-negative")
+    if declared_size > max_input_bytes:
+        raise ValueError("repro input exceeds max_input_bytes")
+    if input_path.stat().st_size != declared_size:
+        raise ValueError("repro input size does not match manifest metadata")
+
+    input_bytes = input_path.read_bytes()
+    if len(input_bytes) != declared_size:
+        raise ValueError("repro input changed while being loaded")
+
+    for field in ("candidate", "oracle", "comparison"):
+        if not isinstance(manifest.get(field), dict):
+            raise TypeError(f"repro {field} record must be an object")
+
+    metadata = manifest.get("metadata")
+    if not isinstance(metadata, dict):
+        raise TypeError("repro metadata must be an object")
+
+    return LoadedReproBundle(
+        path=path,
+        input_bytes=input_bytes,
+        signature=_load_failure_signature(manifest.get("failure_signature")),
+        metadata=metadata,
+    )
 
 
 def write_repro_bundle(

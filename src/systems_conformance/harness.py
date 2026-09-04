@@ -9,7 +9,7 @@ from typing import Any
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
 from .model import ExecutionResult
-from .repro import ReproBundle, write_repro_bundle
+from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
 from .runner import DEFAULT_MAX_OUTPUT_BYTES, run_process
 
 
@@ -77,6 +77,19 @@ class DifferentialRun:
     oracle: ExecutionResult
     comparison: ComparisonResult
     signature: FailureSignature | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReproReplay:
+    """Observed result of replaying one validated reproducer bundle."""
+
+    bundle: LoadedReproBundle
+    run: DifferentialRun
+
+    @property
+    def reproduced(self) -> bool:
+        """Return whether replay preserved the bundle's stable failure identity."""
+        return self.run.signature == self.bundle.signature
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,3 +173,18 @@ class DifferentialHarness:
             signature=result.signature,
             metadata=metadata,
         )
+
+    def replay_repro(
+        self,
+        path: Path,
+        *,
+        max_input_bytes: int = 16 * 1024 * 1024,
+        max_manifest_bytes: int = 1024 * 1024,
+    ) -> ReproReplay:
+        """Safely load a repro bundle and execute its input against this harness."""
+        bundle = load_repro_bundle(
+            path,
+            max_input_bytes=max_input_bytes,
+            max_manifest_bytes=max_manifest_bytes,
+        )
+        return ReproReplay(bundle=bundle, run=self.evaluate(bundle.input_bytes))
