@@ -41,6 +41,29 @@ def test_real_process_mismatch_produces_stable_signature() -> None:
     assert harness.preserves_failure(b"another case", result.signature) is True
 
 
+def test_harness_classifies_hard_output_budget_as_infrastructure_failure() -> None:
+    noisy = target(
+        "import sys; chunk=b'x'*65536\n"
+        "while True:\n"
+        " sys.stdout.buffer.write(chunk); sys.stdout.buffer.flush()"
+    )
+    harness = DifferentialHarness(
+        candidate=noisy,
+        oracle=target(ECHO_SCRIPT),
+        timeout_seconds=5,
+        max_output_bytes=128,
+        max_total_output_bytes=128 * 1024,
+    )
+
+    result = harness.evaluate(b"input")
+
+    assert result.comparison.classification == "infrastructure_failure"
+    assert result.candidate.infrastructure_error is not None
+    assert result.candidate.infrastructure_error.startswith("OutputLimitExceeded:")
+    assert result.signature is not None
+    assert result.signature.kind == "infrastructure_failure"
+
+
 def test_command_target_snapshots_mutable_configuration(tmp_path) -> None:
     argv = [sys.executable, "-c", ECHO_SCRIPT]
     env = {"ONLY": "value"}
@@ -54,6 +77,18 @@ def test_command_target_snapshots_mutable_configuration(tmp_path) -> None:
     assert command.env == (("ONLY", "value"),)
 
 
+def test_hard_output_budget_changes_replay_context() -> None:
+    command = target(ECHO_SCRIPT)
+    baseline = DifferentialHarness(candidate=command, oracle=command)
+    constrained = DifferentialHarness(
+        candidate=command,
+        oracle=command,
+        max_total_output_bytes=1024,
+    )
+
+    assert baseline.replay_context_sha256 != constrained.replay_context_sha256
+
+
 def test_harness_rejects_invalid_execution_limits() -> None:
     command = target(ECHO_SCRIPT)
 
@@ -61,3 +96,5 @@ def test_harness_rejects_invalid_execution_limits() -> None:
         DifferentialHarness(candidate=command, oracle=command, timeout_seconds=0)
     with pytest.raises(ValueError, match="max_output_bytes"):
         DifferentialHarness(candidate=command, oracle=command, max_output_bytes=-1)
+    with pytest.raises(ValueError, match="max_total_output_bytes"):
+        DifferentialHarness(candidate=command, oracle=command, max_total_output_bytes=0)
