@@ -81,7 +81,7 @@ def test_replay_context_hash_does_not_disclose_explicit_environment(tmp_path) ->
     manifest_text = bundle.manifest_path.read_text(encoding="utf-8")
 
     assert secret not in manifest_text
-    assert candidate.argv[2] not in manifest_text
+    assert "REPRO_TEST_SECRET" not in manifest_text
     assert harness.replay_context_sha256 in manifest_text
 
 
