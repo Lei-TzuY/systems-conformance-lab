@@ -13,7 +13,7 @@ The stability boundary and deferred scope are documented in [`docs/stability-che
 - argv-only process execution (`shell=False`)
 - deterministic UTF-8/stdin byte input handling
 - timeout classification and process-tree cleanup
-- bounded stdout/stderr capture with total-size/truncation metadata
+- concurrently drained stdout/stderr with bounded in-memory capture and a hard aggregate emitted-output budget
 - exit-code / signal / infrastructure-error metadata
 - JSON-serializable versioned execution records
 - deterministic candidate/oracle comparison
@@ -48,7 +48,7 @@ input bytes
                                                        +--> validated, context-bound repro replay
 ```
 
-The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle. Replay tests then reload persisted evidence through the bounded loader and verify the same real-process failure identity. Newly written bundles bind `input.bin` to the manifest with SHA-256 so same-size input corruption is rejected before a target executes, while older v1 bundles without that additive field remain replayable. Harness-written bundles also carry a SHA-256 fingerprint of execution-affecting target settings, allowing replay to reject an accidentally different target context before untrusted input executes. The fingerprint does not persist raw argv, cwd, or environment values.
+The integration tests execute actual Python child processes rather than synthetic `ExecutionResult` fixtures. One end-to-end regression drives a deterministic fuzz campaign to a real candidate/oracle mismatch, reduces the failing input while preserving the exact failure signature, and persists the minimized reproducer bundle. Replay tests then reload persisted evidence through the bounded loader and verify the same real-process failure identity. Newly written bundles bind `input.bin` to the manifest with SHA-256 so same-size input corruption is rejected before a target executes, while older v1 bundles without that additive field remain replayable. Harness-written bundles also carry a SHA-256 fingerprint of execution-affecting target settings, allowing replay to reject an accidentally different target context before untrusted input executes. The fingerprint does not persist raw argv, cwd, or environment values. The runner drains both output streams concurrently and terminates a target as an infrastructure failure when its combined emitted-output budget is exceeded, so capture truncation does not translate into unbounded temporary-file growth.
 
 ## Minimal usage
 
