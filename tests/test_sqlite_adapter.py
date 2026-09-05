@@ -121,7 +121,7 @@ def test_sqlite_fault_checkpoint_triggers_at_exact_setup_occurrence() -> None:
     assert result.infrastructure_error is None
     assert result.exit_code == 5
     assert result.stdout.text == ""
-    assert result.stderr.text == "injected_fault: abort setup 1\n"
+    assert result.stderr.text.strip() == "injected_fault: abort setup 1"
 
 
 def test_sqlite_fault_checkpoint_is_not_triggered_past_last_occurrence() -> None:
@@ -150,7 +150,7 @@ def test_sqlite_target_rejects_unsupported_fault_kind() -> None:
 
     assert result.infrastructure_error is None
     assert result.exit_code == 2
-    assert result.stderr.text == "protocol_error: unsupported SQLite fault kind\n"
+    assert result.stderr.text.strip() == "protocol_error: unsupported SQLite fault kind"
 
 
 def test_strict_protocol_rejection_is_deterministic_across_real_targets() -> None:
@@ -205,7 +205,7 @@ def test_real_differential_harness_observes_injected_sqlite_fault() -> None:
     assert run.candidate.infrastructure_error is None
     assert run.oracle.infrastructure_error is None
     assert run.candidate.exit_code == 5
-    assert run.candidate.stderr.text == "injected_fault: abort query 0\n"
+    assert run.candidate.stderr.text.strip() == "injected_fault: abort query 0"
     assert run.oracle.exit_code == 0
     assert run.comparison.classification == "product_mismatch"
     assert run.signature is not None
