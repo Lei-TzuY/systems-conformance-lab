@@ -3,7 +3,11 @@ from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
 from .fault import FaultController, FaultSpec
-from .feedback_fuzz import FeedbackCampaignResult, FeedbackCorpusEntry, run_feedback_guided_campaign
+from .feedback_fuzz import (
+    FeedbackCampaignResult,
+    FeedbackCorpusEntry,
+    run_feedback_guided_campaign,
+)
 from .fuzz import (
     FuzzCampaignResult,
     FuzzDiscoveryResult,
