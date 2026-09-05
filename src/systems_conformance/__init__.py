@@ -11,6 +11,7 @@ from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repr
 from .repro_archive import export_repro_archive, import_repro_archive
 from .retention import RetentionResult, enforce_repro_retention
 from .runner import run_process
+from .write_fault import FaultingBinaryWriter
 
 __all__ = [
     "CommandTarget",
@@ -22,6 +23,7 @@ __all__ = [
     "FailureSignature",
     "FaultController",
     "FaultSpec",
+    "FaultingBinaryWriter",
     "FuzzCampaignResult",
     "LoadedReproBundle",
     "ReductionResult",
