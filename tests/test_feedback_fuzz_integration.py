@@ -63,4 +63,4 @@ def test_feedback_campaign_grows_from_real_trace_features_and_captures_failure()
     assert result.failures[0].case == b"AZ"
     assert result.failures[0].evaluation_index == 4
     assert result.failures[0].comparison.classification == "product_mismatch"
-    assert result.failures[0].signature.classification == "product_mismatch"
+    assert result.failures[0].signature.kind == "product_mismatch"
