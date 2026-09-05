@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 
 def _reject_json_constant(value: str) -> Any:
@@ -86,7 +86,8 @@ def _append_parameter_mutations(
     *,
     payload: dict[str, Any],
     statement: dict[str, Any],
-    replace_statement: Any,
+    section: Literal["transaction", "observe"],
+    statement_index: int | None,
     cases: list[bytes],
     seen: set[bytes],
     max_case_bytes: int,
@@ -100,7 +101,15 @@ def _append_parameter_mutations(
             candidate_params = list(params)
             candidate_params[param_index] = replacement
             candidate_statement["params"] = candidate_params
-            replace_statement(candidate, candidate_statement)
+            if section == "transaction":
+                assert statement_index is not None
+                transaction = payload["transaction"]
+                assert isinstance(transaction, list)
+                candidate_transaction = [dict(item) for item in transaction]
+                candidate_transaction[statement_index] = candidate_statement
+                candidate["transaction"] = candidate_transaction
+            else:
+                candidate["observe"] = candidate_statement
             encoded = _encode(candidate)
             if len(encoded) > max_case_bytes or encoded in seen:
                 continue
@@ -148,18 +157,11 @@ class SQLiteTransactionParameterMutations:
             assert isinstance(transaction, list)
             for statement_index, statement in enumerate(transaction):
                 assert isinstance(statement, dict)
-
-                def replace_transaction(
-                    candidate: dict[str, Any], candidate_statement: dict[str, Any]
-                ) -> None:
-                    candidate_transaction = [dict(item) for item in transaction]
-                    candidate_transaction[statement_index] = candidate_statement
-                    candidate["transaction"] = candidate_transaction
-
                 _append_parameter_mutations(
                     payload=payload,
                     statement=statement,
-                    replace_statement=replace_transaction,
+                    section="transaction",
+                    statement_index=statement_index,
                     cases=cases,
                     seen=seen,
                     max_case_bytes=max_case_bytes,
@@ -170,9 +172,8 @@ class SQLiteTransactionParameterMutations:
             _append_parameter_mutations(
                 payload=payload,
                 statement=observe,
-                replace_statement=lambda candidate, candidate_statement: candidate.__setitem__(
-                    "observe", candidate_statement
-                ),
+                section="observe",
+                statement_index=None,
                 cases=cases,
                 seen=seen,
                 max_case_bytes=max_case_bytes,
