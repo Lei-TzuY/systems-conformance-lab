@@ -6,6 +6,7 @@ import math
 import sqlite3
 import sys
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from .fault import FaultController, FaultSpec
@@ -21,6 +22,32 @@ class InjectedFault(RuntimeError):
         super().__init__(f"{spec.kind} {spec.operation} {spec.occurrence}")
 
 
+class VmBudgetExceeded(RuntimeError):
+    def __init__(self, max_vm_steps: int) -> None:
+        self.max_vm_steps = max_vm_steps
+        super().__init__(str(max_vm_steps))
+
+
+@dataclass(slots=True)
+class _VmBudget:
+    remaining: int
+    exhausted: bool = False
+
+    def progress(self) -> int:
+        self.remaining -= 1
+        if self.remaining <= 0:
+            self.exhausted = True
+            return 1
+        return 0
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     foreign_keys = parser.add_mutually_exclusive_group(required=True)
@@ -29,6 +56,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     faults = parser.add_mutually_exclusive_group(required=True)
     faults.add_argument("--enable-faults", action="store_true")
     faults.add_argument("--disable-faults", action="store_true")
+    parser.add_argument("--max-vm-steps", type=_positive_int)
     return parser.parse_args(argv)
 
 
@@ -137,21 +165,35 @@ def _checkpoint(controller: FaultController | None, operation: str) -> None:
         raise InjectedFault(triggered)
 
 
-def _run(raw: bytes, *, foreign_keys: bool, enable_faults: bool) -> bytes:
+def _run(
+    raw: bytes,
+    *,
+    foreign_keys: bool,
+    enable_faults: bool,
+    max_vm_steps: int | None,
+) -> bytes:
     setup, query, params, fault = _decode_request(raw)
     controller = FaultController(fault) if enable_faults and fault is not None else None
+    budget = _VmBudget(max_vm_steps) if max_vm_steps is not None else None
     connection = sqlite3.connect(":memory:")
     try:
         _disable_extension_loading(connection)
         connection.execute(f"PRAGMA foreign_keys = {'ON' if foreign_keys else 'OFF'}")
         connection.set_authorizer(_authorizer)
-        for statement in setup:
-            _checkpoint(controller, "setup")
-            connection.execute(statement)
-        _checkpoint(controller, "query")
-        cursor = connection.execute(query, params)
-        columns = [] if cursor.description is None else [item[0] for item in cursor.description]
-        rows = [[_normalize(value) for value in row] for row in cursor.fetchall()]
+        if budget is not None:
+            connection.set_progress_handler(budget.progress, 1)
+        try:
+            for statement in setup:
+                _checkpoint(controller, "setup")
+                connection.execute(statement)
+            _checkpoint(controller, "query")
+            cursor = connection.execute(query, params)
+            columns = [] if cursor.description is None else [item[0] for item in cursor.description]
+            rows = [[_normalize(value) for value in row] for row in cursor.fetchall()]
+        except sqlite3.Error as exc:
+            if budget is not None and budget.exhausted:
+                raise VmBudgetExceeded(max_vm_steps) from exc
+            raise
         payload = {"columns": columns, "rows": rows}
         return (
             json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
@@ -168,6 +210,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stdin.buffer.read(),
             foreign_keys=args.foreign_keys,
             enable_faults=args.enable_faults,
+            max_vm_steps=args.max_vm_steps,
         )
     except ProtocolError as exc:
         sys.stderr.write(f"protocol_error: {exc}\n")
@@ -175,6 +218,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except InjectedFault as exc:
         sys.stderr.write(f"injected_fault: {exc}\n")
         return 5
+    except VmBudgetExceeded as exc:
+        sys.stderr.write(f"sqlite_vm_budget_exceeded: {exc.max_vm_steps}\n")
+        return 6
     except sqlite3.Error as exc:
         error_name = getattr(exc, "sqlite_errorname", type(exc).__name__)
         sys.stderr.write(f"sqlite_error: {error_name}\n")
