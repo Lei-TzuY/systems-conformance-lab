@@ -110,9 +110,10 @@ def _result(
 
 def _validate_comparison(comparison: ComparisonResult) -> None:
     is_match = comparison.classification == "match"
-    if comparison.equivalent != is_match:
-        raise ValueError("inconsistent comparison result")
-    if is_match and comparison.mismatches:
-        raise ValueError("inconsistent comparison result")
-    if not is_match and not comparison.mismatches:
+    inconsistent = (
+        comparison.equivalent != is_match
+        or (is_match and bool(comparison.mismatches))
+        or (not is_match and not comparison.mismatches)
+    )
+    if inconsistent:
         raise ValueError("inconsistent comparison result")
