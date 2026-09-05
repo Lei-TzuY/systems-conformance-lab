@@ -19,12 +19,15 @@ class SQLiteTransactionTarget:
 
     finalize: Literal["commit", "rollback"] = "commit"
     foreign_keys: bool = True
+    enable_faults: bool = False
     max_statements: int = 64
     max_vm_steps: int | None = None
 
     def __post_init__(self) -> None:
         if self.finalize not in {"commit", "rollback"}:
             raise ValueError("finalize must be 'commit' or 'rollback'")
+        if not isinstance(self.enable_faults, bool):
+            raise TypeError("enable_faults must be a bool")
         if (
             isinstance(self.max_statements, bool)
             or not isinstance(self.max_statements, int)
@@ -46,6 +49,7 @@ class SQLiteTransactionTarget:
             "systems_conformance._sqlite_transaction_worker",
             "--commit" if self.finalize == "commit" else "--rollback",
             "--foreign-keys" if self.foreign_keys else "--no-foreign-keys",
+            "--enable-faults" if self.enable_faults else "--disable-faults",
             "--max-statements",
             str(self.max_statements),
         ]

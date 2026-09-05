@@ -16,11 +16,16 @@ def _request(
     setup: list[str],
     transaction: list[dict[str, object]],
     observe: dict[str, object],
+    fault: dict[str, object] | None = None,
 ) -> bytes:
-    return json.dumps(
-        {"setup": setup, "transaction": transaction, "observe": observe},
-        separators=(",", ":"),
-    ).encode()
+    payload: dict[str, object] = {
+        "setup": setup,
+        "transaction": transaction,
+        "observe": observe,
+    }
+    if fault is not None:
+        payload["fault"] = fault
+    return json.dumps(payload, separators=(",", ":")).encode()
 
 
 def _execute(case: bytes, *, target: SQLiteTransactionTarget | None = None):
@@ -130,6 +135,65 @@ def test_transaction_target_rejects_duplicate_json_fields() -> None:
     assert result.stderr.text.strip() == "protocol_error: duplicate JSON object field: sql"
 
 
+def test_transaction_fault_hits_exact_second_transaction_checkpoint() -> None:
+    result = _execute(
+        _request(
+            setup=["CREATE TABLE items(v INTEGER)"],
+            transaction=[
+                _statement("INSERT INTO items VALUES (1)"),
+                _statement("INSERT INTO items VALUES (2)"),
+            ],
+            observe=_statement("SELECT v FROM items ORDER BY v"),
+            fault={"operation": "transaction", "occurrence": 1, "kind": "abort"},
+        ),
+        target=SQLiteTransactionTarget(enable_faults=True),
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 5
+    assert result.stdout.text == ""
+    assert result.stderr.text.strip() == "injected_fault: abort transaction 1"
+
+
+def test_transaction_fault_disabled_keeps_request_semantics() -> None:
+    result = _execute(
+        _request(
+            setup=["CREATE TABLE items(v INTEGER)"],
+            transaction=[_statement("INSERT INTO items VALUES (1)")],
+            observe=_statement("SELECT v FROM items"),
+            fault={"operation": "finalize", "occurrence": 0, "kind": "abort"},
+        ),
+        target=SQLiteTransactionTarget(enable_faults=False),
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0
+    assert json.loads(result.stdout.text)["observation"]["rows"] == [[1]]
+
+
+def test_transaction_target_rejects_unknown_fault_operation() -> None:
+    result = _execute(
+        _request(
+            setup=[],
+            transaction=[_statement("SELECT 1")],
+            observe=_statement("SELECT 1"),
+            fault={"operation": "commit", "occurrence": 0, "kind": "abort"},
+        ),
+        target=SQLiteTransactionTarget(enable_faults=True),
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 2
+    assert result.stderr.text.strip() == (
+        "protocol_error: fault operation must be setup, transaction, finalize, or observe"
+    )
+
+
+def test_transaction_target_rejects_non_bool_fault_flag() -> None:
+    with pytest.raises(TypeError, match="enable_faults must be a bool"):
+        SQLiteTransactionTarget(enable_faults=1)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
@@ -164,6 +228,30 @@ def test_real_harness_distinguishes_commit_from_rollback_semantics() -> None:
     assert run.oracle.exit_code == 0
     assert json.loads(run.candidate.stdout.text)["observation"]["rows"] == [[42]]
     assert json.loads(run.oracle.stdout.text)["observation"]["rows"] == []
+    assert run.comparison.classification == "product_mismatch"
+    assert run.signature is not None
+    assert run.signature.kind == "product_mismatch"
+
+
+def test_real_harness_classifies_transaction_fault_as_product_mismatch() -> None:
+    candidate = SQLiteTransactionTarget(enable_faults=True).as_command_target()
+    oracle = SQLiteTransactionTarget(enable_faults=False).as_command_target()
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    case = _request(
+        setup=["CREATE TABLE items(v INTEGER)"],
+        transaction=[_statement("INSERT INTO items VALUES (42)")],
+        observe=_statement("SELECT v FROM items ORDER BY v"),
+        fault={"operation": "finalize", "occurrence": 0, "kind": "abort"},
+    )
+
+    run = harness.evaluate(case)
+
+    assert run.candidate.infrastructure_error is None
+    assert run.oracle.infrastructure_error is None
+    assert run.candidate.exit_code == 5
+    assert run.oracle.exit_code == 0
+    assert run.candidate.stderr.text.strip() == "injected_fault: abort finalize 0"
+    assert json.loads(run.oracle.stdout.text)["observation"]["rows"] == [[42]]
     assert run.comparison.classification == "product_mismatch"
     assert run.signature is not None
     assert run.signature.kind == "product_mismatch"

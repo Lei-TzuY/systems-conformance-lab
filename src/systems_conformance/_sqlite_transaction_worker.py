@@ -9,9 +9,17 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from .fault import FaultController, FaultSpec
+
 
 class ProtocolError(ValueError):
     pass
+
+
+class InjectedFault(RuntimeError):
+    def __init__(self, spec: FaultSpec) -> None:
+        self.spec = spec
+        super().__init__(f"{spec.kind} {spec.operation} {spec.occurrence}")
 
 
 class VmBudgetExceeded(RuntimeError):
@@ -54,6 +62,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     foreign_keys = parser.add_mutually_exclusive_group(required=True)
     foreign_keys.add_argument("--foreign-keys", action="store_true")
     foreign_keys.add_argument("--no-foreign-keys", action="store_true")
+    faults = parser.add_mutually_exclusive_group(required=True)
+    faults.add_argument("--enable-faults", action="store_true")
+    faults.add_argument("--disable-faults", action="store_true")
     parser.add_argument("--max-statements", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
     return parser.parse_args(argv)
@@ -102,9 +113,31 @@ def _decode_statement(value: Any, *, field: str) -> _Statement:
     return _Statement(sql=sql, params=params)
 
 
+def _decode_fault(value: Any) -> FaultSpec | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ProtocolError("fault must be an object")
+    if set(value) != {"operation", "occurrence", "kind"}:
+        raise ProtocolError("fault must contain operation, occurrence, and kind")
+
+    operation = value["operation"]
+    occurrence = value["occurrence"]
+    kind = value["kind"]
+    if operation not in {"setup", "transaction", "finalize", "observe"}:
+        raise ProtocolError(
+            "fault operation must be setup, transaction, finalize, or observe"
+        )
+    if isinstance(occurrence, bool) or not isinstance(occurrence, int) or occurrence < 0:
+        raise ProtocolError("fault occurrence must be a non-negative integer")
+    if kind != "abort":
+        raise ProtocolError("unsupported SQLite transaction fault kind")
+    return FaultSpec(operation=operation, occurrence=occurrence, kind=kind)
+
+
 def _decode_request(
     raw: bytes, *, max_statements: int
-) -> tuple[list[str], list[_Statement], _Statement]:
+) -> tuple[list[str], list[_Statement], _Statement, FaultSpec | None]:
     try:
         payload = json.loads(
             raw.decode("utf-8"),
@@ -115,12 +148,13 @@ def _decode_request(
         raise ProtocolError("input must be one UTF-8 JSON document") from exc
     if not isinstance(payload, dict):
         raise ProtocolError("top-level request must be an object")
-    if set(payload) - {"setup", "transaction", "observe"}:
+    if set(payload) - {"setup", "transaction", "observe", "fault"}:
         raise ProtocolError("request contains unknown fields")
 
     setup = payload.get("setup", [])
     transaction = payload.get("transaction")
     observe = payload.get("observe")
+    fault = _decode_fault(payload.get("fault"))
     if not isinstance(setup, list) or not all(isinstance(item, str) for item in setup):
         raise ProtocolError("setup must be a list of SQL strings")
     if not isinstance(transaction, list) or not transaction:
@@ -131,7 +165,7 @@ def _decode_request(
     decoded_observe = _decode_statement(observe, field="observe")
     if len(setup) + len(decoded_transaction) + 1 > max_statements:
         raise ProtocolError(f"request exceeds max_statements: {max_statements}")
-    return setup, decoded_transaction, decoded_observe
+    return setup, decoded_transaction, decoded_observe, fault
 
 
 def _authorizer(
@@ -164,6 +198,14 @@ def _disable_extension_loading(connection: sqlite3.Connection) -> None:
         disable(False)
 
 
+def _checkpoint(controller: FaultController | None, operation: str) -> None:
+    if controller is None:
+        return
+    triggered = controller.checkpoint(operation)
+    if triggered is not None:
+        raise InjectedFault(triggered)
+
+
 def _execute_statement(connection: sqlite3.Connection, statement: _Statement) -> dict[str, Any]:
     cursor = connection.execute(statement.sql, statement.params)
     columns = [] if cursor.description is None else [item[0] for item in cursor.description]
@@ -176,10 +218,14 @@ def _run(
     *,
     commit: bool,
     foreign_keys: bool,
+    enable_faults: bool,
     max_statements: int,
     max_vm_steps: int | None,
 ) -> bytes:
-    setup, transaction, observe = _decode_request(raw, max_statements=max_statements)
+    setup, transaction, observe, fault = _decode_request(
+        raw, max_statements=max_statements
+    )
+    controller = FaultController(fault) if enable_faults and fault is not None else None
     budget = _VmBudget(max_vm_steps) if max_vm_steps is not None else None
     connection = sqlite3.connect(":memory:", isolation_level=None)
     try:
@@ -190,14 +236,19 @@ def _run(
             connection.set_progress_handler(budget.progress, 1)
         try:
             for statement in setup:
+                _checkpoint(controller, "setup")
                 connection.execute(statement)
 
             connection.set_authorizer(None)
             connection.execute("BEGIN")
             connection.set_authorizer(_authorizer)
 
-            transcript = [_execute_statement(connection, statement) for statement in transaction]
+            transcript = []
+            for statement in transaction:
+                _checkpoint(controller, "transaction")
+                transcript.append(_execute_statement(connection, statement))
 
+            _checkpoint(controller, "finalize")
             connection.set_authorizer(None)
             if commit:
                 connection.commit()
@@ -205,6 +256,7 @@ def _run(
                 connection.rollback()
             connection.set_authorizer(_authorizer)
 
+            _checkpoint(controller, "observe")
             observation = _execute_statement(connection, observe)
         except sqlite3.Error as exc:
             if budget is not None and budget.exhausted:
@@ -227,12 +279,16 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stdin.buffer.read(),
             commit=args.commit,
             foreign_keys=args.foreign_keys,
+            enable_faults=args.enable_faults,
             max_statements=args.max_statements,
             max_vm_steps=args.max_vm_steps,
         )
     except ProtocolError as exc:
         sys.stderr.write(f"protocol_error: {exc}\n")
         return 2
+    except InjectedFault as exc:
+        sys.stderr.write(f"injected_fault: {exc}\n")
+        return 5
     except VmBudgetExceeded as exc:
         sys.stderr.write(f"sqlite_vm_budget_exceeded: {exc.max_vm_steps}\n")
         return 6
