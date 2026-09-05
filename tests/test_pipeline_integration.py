@@ -7,6 +7,7 @@ from systems_conformance import (
     DifferentialHarness,
     failure_signature,
     reduce_case,
+    run_failure_discovery_campaign,
     run_fuzz_campaign,
 )
 from systems_conformance.byte_reducer import hierarchical_byte_deletions
@@ -22,6 +23,17 @@ HIGH_BIT_BUGGY_SCRIPT = (
     "import sys; data = sys.stdin.buffer.read(); "
     "sys.stdout.buffer.write(b'BAD' if data == b'\\x80' else data)"
 )
+MULTI_BUG_SCRIPT = """
+import sys
+
+data = sys.stdin.buffer.read()
+if data.startswith(b"out"):
+    sys.stdout.buffer.write(b"BAD")
+elif data == b"exit":
+    raise SystemExit(7)
+else:
+    sys.stdout.buffer.write(data)
+"""
 WRITE_FAULT_SCRIPT = """
 import sys
 import tempfile
@@ -110,6 +122,33 @@ def test_deterministic_byte_mutations_find_real_process_mismatch() -> None:
     assert campaign.failing_case == b"\x80"
     assert campaign.comparison is not None
     assert campaign.comparison.classification == "product_mismatch"
+
+
+def test_failure_discovery_finds_distinct_real_process_signatures() -> None:
+    harness = DifferentialHarness(
+        candidate=target(MULTI_BUG_SCRIPT),
+        oracle=target(ECHO_SCRIPT),
+    )
+    corpus = (b"ok", b"out-one", b"out-two", b"exit")
+
+    campaign = run_failure_discovery_campaign(
+        cases=corpus.__getitem__,
+        evaluate=harness.compare,
+        max_evaluations=len(corpus),
+        max_unique_failures=4,
+    )
+
+    assert campaign.evaluations == 4
+    assert campaign.exhausted_budget is True
+    assert [failure.case for failure in campaign.failures] == [b"out-one", b"exit"]
+    assert [failure.signature.kind for failure in campaign.failures] == [
+        "product_mismatch",
+        "product_mismatch",
+    ]
+    assert [failure.signature.dimensions for failure in campaign.failures] == [
+        ("stdout",),
+        ("exit_code", "stdout"),
+    ]
 
 
 def test_binary_write_fault_adapter_changes_real_process_filesystem_result() -> None:
