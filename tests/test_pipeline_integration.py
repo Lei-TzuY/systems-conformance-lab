@@ -122,6 +122,6 @@ def test_binary_write_fault_adapter_changes_real_process_filesystem_result() -> 
 
     assert run.comparison.classification == "product_mismatch"
     assert run.comparison.mismatches == ("stdout",)
-    assert run.candidate.stdout.data == b"ab"
-    assert run.oracle.stdout.data == b"abcdef"
+    assert run.candidate.stdout.text == "ab"
+    assert run.oracle.stdout.text == "abcdef"
     assert run.candidate.infrastructure_error is None
