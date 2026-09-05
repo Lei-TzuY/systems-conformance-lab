@@ -28,13 +28,15 @@ def _decode_case(case: bytes) -> dict[str, Any]:
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("case must be one UTF-8 JSON document") from exc
     if not isinstance(payload, dict):
-        raise ValueError("case must be a JSON object")
+        raise TypeError("case must be a JSON object")
 
     setup = payload.get("setup", [])
     transaction = payload.get("transaction")
     if not isinstance(setup, list):
-        raise ValueError("setup must be a list")
-    if not isinstance(transaction, list) or not transaction:
+        raise TypeError("setup must be a list")
+    if not isinstance(transaction, list):
+        raise TypeError("transaction must be a list")
+    if not transaction:
         raise ValueError("transaction must be a non-empty list")
     return payload
 
