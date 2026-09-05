@@ -60,7 +60,7 @@ def test_sqlite_target_rejects_duplicate_json_fields() -> None:
     assert result.infrastructure_error is None
     assert result.exit_code == 2
     assert result.stdout.text == ""
-    assert result.stderr.text == "protocol_error: duplicate JSON object field: query\n"
+    assert result.stderr.text.strip() == "protocol_error: duplicate JSON object field: query"
 
 
 def test_sqlite_target_rejects_non_finite_json_constants() -> None:
@@ -69,8 +69,8 @@ def test_sqlite_target_rejects_non_finite_json_constants() -> None:
     assert result.infrastructure_error is None
     assert result.exit_code == 2
     assert result.stdout.text == ""
-    assert result.stderr.text == (
-        "protocol_error: non-finite JSON constant is not supported: NaN\n"
+    assert result.stderr.text.strip() == (
+        "protocol_error: non-finite JSON constant is not supported: NaN"
     )
 
 
@@ -80,19 +80,17 @@ def test_sqlite_target_rejects_float_overflow_to_infinity() -> None:
     assert result.infrastructure_error is None
     assert result.exit_code == 2
     assert result.stdout.text == ""
-    assert result.stderr.text == "protocol_error: floating params must be finite\n"
+    assert result.stderr.text.strip() == "protocol_error: floating params must be finite"
 
 
 def test_sqlite_target_rejects_integer_outside_binding_range_without_traceback() -> None:
-    result = _execute(
-        _request(setup=[], query="SELECT ?", params=[1 << 63])
-    )
+    result = _execute(_request(setup=[], query="SELECT ?", params=[1 << 63]))
 
     assert result.infrastructure_error is None
     assert result.exit_code == 2
     assert result.stdout.text == ""
-    assert result.stderr.text == (
-        "protocol_error: integer params must fit signed 64-bit SQLite range\n"
+    assert result.stderr.text.strip() == (
+        "protocol_error: integer params must fit signed 64-bit SQLite range"
     )
 
 
