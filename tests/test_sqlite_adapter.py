@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from systems_conformance import DifferentialHarness
 from systems_conformance.sqlite_adapter import SQLiteQueryTarget
 
@@ -153,6 +155,41 @@ def test_sqlite_target_rejects_unsupported_fault_kind() -> None:
     assert result.stderr.text.strip() == "protocol_error: unsupported SQLite fault kind"
 
 
+@pytest.mark.parametrize("max_vm_steps", [0, -1, True])
+def test_sqlite_target_rejects_invalid_vm_budgets(max_vm_steps: int) -> None:
+    with pytest.raises(ValueError, match="max_vm_steps must be a positive integer or None"):
+        SQLiteQueryTarget(max_vm_steps=max_vm_steps)
+
+
+def test_sqlite_vm_budget_allows_small_query_within_limit() -> None:
+    result = _execute(
+        _request(setup=[], query="SELECT 1"),
+        target=SQLiteQueryTarget(max_vm_steps=100),
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0
+    assert json.loads(result.stdout.text) == {"columns": ["1"], "rows": [[1]]}
+
+
+def test_sqlite_vm_budget_interrupts_recursive_query_without_harness_timeout() -> None:
+    case = _request(
+        setup=[],
+        query=(
+            "WITH RECURSIVE cnt(x) AS ("
+            "VALUES(1) UNION ALL SELECT x+1 FROM cnt WHERE x<1000000"
+            ") SELECT max(x) FROM cnt"
+        ),
+    )
+
+    result = _execute(case, target=SQLiteQueryTarget(max_vm_steps=100))
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 6
+    assert result.stdout.text == ""
+    assert result.stderr.text.strip() == "sqlite_vm_budget_exceeded: 100"
+
+
 def test_strict_protocol_rejection_is_deterministic_across_real_targets() -> None:
     candidate = SQLiteQueryTarget(foreign_keys=True).as_command_target()
     oracle = SQLiteQueryTarget(foreign_keys=False).as_command_target()
@@ -206,6 +243,31 @@ def test_real_differential_harness_observes_injected_sqlite_fault() -> None:
     assert run.oracle.infrastructure_error is None
     assert run.candidate.exit_code == 5
     assert run.candidate.stderr.text.strip() == "injected_fault: abort query 0"
+    assert run.oracle.exit_code == 0
+    assert run.comparison.classification == "product_mismatch"
+    assert run.signature is not None
+    assert run.signature.kind == "product_mismatch"
+
+
+def test_real_differential_harness_observes_sqlite_vm_budget() -> None:
+    candidate = SQLiteQueryTarget(max_vm_steps=100).as_command_target()
+    oracle = SQLiteQueryTarget(max_vm_steps=100000).as_command_target()
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    case = _request(
+        setup=[],
+        query=(
+            "WITH RECURSIVE cnt(x) AS ("
+            "VALUES(1) UNION ALL SELECT x+1 FROM cnt WHERE x<1000"
+            ") SELECT max(x) FROM cnt"
+        ),
+    )
+
+    run = harness.evaluate(case)
+
+    assert run.candidate.infrastructure_error is None
+    assert run.oracle.infrastructure_error is None
+    assert run.candidate.exit_code == 6
+    assert run.candidate.stderr.text.strip() == "sqlite_vm_budget_exceeded: 100"
     assert run.oracle.exit_code == 0
     assert run.comparison.classification == "product_mismatch"
     assert run.signature is not None
