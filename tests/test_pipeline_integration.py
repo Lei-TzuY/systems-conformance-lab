@@ -1,6 +1,5 @@
 import json
 import sys
-from collections.abc import Iterable
 
 from systems_conformance import (
     CommandTarget,
@@ -9,6 +8,7 @@ from systems_conformance import (
     reduce_case,
     run_fuzz_campaign,
 )
+from systems_conformance.byte_reducer import hierarchical_byte_deletions
 
 ECHO_SCRIPT = (
     "import sys; data = sys.stdin.buffer.read(); sys.stdout.buffer.write(data)"
@@ -21,11 +21,6 @@ BUGGY_SCRIPT = (
 
 def target(script: str) -> CommandTarget:
     return CommandTarget((sys.executable, "-c", script))
-
-
-def deletion_candidates(value: bytes) -> Iterable[bytes]:
-    for index in range(len(value)):
-        yield value[:index] + value[index + 1 :]
 
 
 def test_real_target_pipeline_finds_reduces_and_persists_failure(tmp_path) -> None:
@@ -49,7 +44,7 @@ def test_real_target_pipeline_finds_reduces_and_persists_failure(tmp_path) -> No
 
     reduction = reduce_case(
         campaign.failing_case,
-        candidates=deletion_candidates,
+        candidates=hierarchical_byte_deletions,
         preserves_failure=lambda case: harness.preserves_failure(case, signature),
         measure=len,
         max_evaluations=100,
@@ -57,6 +52,7 @@ def test_real_target_pipeline_finds_reduces_and_persists_failure(tmp_path) -> No
 
     assert reduction.reduced == b"BUG"
     assert reduction.accepted_steps > 0
+    assert reduction.evaluations < 40
 
     bundle = harness.write_repro(
         tmp_path / "repro",
