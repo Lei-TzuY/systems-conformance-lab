@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 
 import pytest
 
@@ -101,6 +102,26 @@ def test_hard_output_budget_counts_stdout_and_stderr_together() -> None:
     assert result.infrastructure_error is not None
     assert result.infrastructure_error.startswith("OutputLimitExceeded:")
     assert result.stdout.total_bytes + result.stderr.total_bytes > 128 * 1024
+
+
+def test_post_exit_descendant_pipe_leak_is_bounded() -> None:
+    started = time.monotonic()
+    result = run_process(
+        python(
+            "import subprocess, sys\n"
+            "subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(2)'])\n"
+            "print('root done')\n"
+        ),
+        timeout_seconds=5,
+    )
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 1.5
+    assert result.exit_code == 0
+    assert result.timed_out is False
+    assert result.infrastructure_error is not None
+    assert result.infrastructure_error.startswith("ProcessTreeLeak:")
+    assert result.stdout.text == f"root done{os.linesep}"
 
 
 def test_missing_executable_is_infrastructure_error() -> None:
