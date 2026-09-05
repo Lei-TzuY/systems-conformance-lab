@@ -3,7 +3,7 @@ import io
 
 import pytest
 
-from systems_conformance import FaultSpec, FaultingBinaryWriter
+from systems_conformance import FaultingBinaryWriter, FaultSpec
 
 
 def test_short_write_triggers_once_at_selected_occurrence() -> None:
