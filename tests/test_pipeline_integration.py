@@ -3,6 +3,7 @@ import sys
 
 from systems_conformance import (
     CommandTarget,
+    DeterministicByteMutations,
     DifferentialHarness,
     failure_signature,
     reduce_case,
@@ -16,6 +17,10 @@ ECHO_SCRIPT = (
 BUGGY_SCRIPT = (
     "import sys; data = sys.stdin.buffer.read(); "
     "sys.stdout.buffer.write(data.replace(b'BUG', b'BAD') if b'BUG' in data else data)"
+)
+HIGH_BIT_BUGGY_SCRIPT = (
+    "import sys; data = sys.stdin.buffer.read(); "
+    "sys.stdout.buffer.write(b'BAD' if data == b'\\x80' else data)"
 )
 
 
@@ -68,3 +73,23 @@ def test_real_target_pipeline_finds_reduces_and_persists_failure(tmp_path) -> No
     assert manifest["failure_signature"]["schema_version"] == signature.schema_version
     assert manifest["comparison"]["classification"] == "product_mismatch"
     assert manifest["metadata"] == {"source": "end-to-end-integration"}
+
+
+def test_deterministic_byte_mutations_find_real_process_mismatch() -> None:
+    harness = DifferentialHarness(
+        candidate=target(HIGH_BIT_BUGGY_SCRIPT),
+        oracle=target(ECHO_SCRIPT),
+    )
+    mutations = DeterministicByteMutations((b"\x00",))
+
+    campaign = run_fuzz_campaign(
+        cases=mutations,
+        evaluate=harness.compare,
+        max_evaluations=mutations.case_count,
+    )
+
+    assert campaign.evaluations == 9
+    assert campaign.classification == "product_mismatch"
+    assert campaign.failing_case == b"\x80"
+    assert campaign.comparison is not None
+    assert campaign.comparison.classification == "product_mismatch"
