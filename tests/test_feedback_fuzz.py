@@ -47,11 +47,11 @@ def test_stops_at_corpus_limit() -> None:
     ],
 )
 def test_rejects_invalid_bounds(kwargs, message) -> None:
-    defaults = dict(
-        seeds=(b"x",),
-        mutate=lambda case, index: case,
-        evaluate=lambda case: (MATCH, {case}),
-    )
+    defaults = {
+        "seeds": (b"x",),
+        "mutate": lambda case, index: case,
+        "evaluate": lambda case: (MATCH, {case}),
+    }
     defaults.update(kwargs)
     with pytest.raises(ValueError, match=message):
         run_feedback_guided_campaign(**defaults)
