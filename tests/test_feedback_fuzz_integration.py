@@ -26,14 +26,19 @@ sys.stdout.buffer.write(data)
 sys.stderr.write("COV:" + ",".join(str(line) for line in sorted(seen)))
 '''
 
+TRACED_CANDIDATE = TRACED_ECHO.replace(
+    "sys.stdout.buffer.write(data)",
+    "sys.stdout.buffer.write(b'bad' if data == b'AZ' else data)",
+)
 
-def test_feedback_campaign_grows_from_real_trace_features() -> None:
-    target = CommandTarget((sys.executable, "-c", TRACED_ECHO))
-    harness = DifferentialHarness(candidate=target, oracle=target)
+
+def test_feedback_campaign_grows_from_real_trace_features_and_captures_failure() -> None:
+    candidate = CommandTarget((sys.executable, "-c", TRACED_CANDIDATE))
+    oracle = CommandTarget((sys.executable, "-c", TRACED_ECHO))
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle)
 
     def evaluate(case: bytes):
         run = harness.evaluate(case)
-        assert run.comparison.classification == "match"
         prefix, payload = run.candidate.stderr.text.split(":", 1)
         assert prefix == "COV"
         features = {int(value) for value in payload.split(",") if value}
@@ -54,3 +59,8 @@ def test_feedback_campaign_grows_from_real_trace_features() -> None:
     assert len(result.features) >= 6
     assert result.evaluations == 7
     assert result.exhausted_budget
+    assert len(result.failures) == 1
+    assert result.failures[0].case == b"AZ"
+    assert result.failures[0].evaluation_index == 4
+    assert result.failures[0].comparison.classification == "product_mismatch"
+    assert result.failures[0].signature.classification == "product_mismatch"
