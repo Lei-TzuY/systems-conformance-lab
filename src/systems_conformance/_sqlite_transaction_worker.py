@@ -5,8 +5,10 @@ import json
 import math
 import sqlite3
 import sys
+import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .fault import FaultController, FaultSpec
@@ -65,6 +67,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     faults = parser.add_mutually_exclusive_group(required=True)
     faults.add_argument("--enable-faults", action="store_true")
     faults.add_argument("--disable-faults", action="store_true")
+    persistence = parser.add_mutually_exclusive_group(required=True)
+    persistence.add_argument("--reopen-before-observe", action="store_true")
+    persistence.add_argument("--same-connection-observe", action="store_true")
     parser.add_argument("--max-statements", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
     return parser.parse_args(argv)
@@ -198,6 +203,19 @@ def _disable_extension_loading(connection: sqlite3.Connection) -> None:
         disable(False)
 
 
+def _configure_connection(
+    connection: sqlite3.Connection,
+    *,
+    foreign_keys: bool,
+    budget: _VmBudget | None,
+) -> None:
+    _disable_extension_loading(connection)
+    connection.execute(f"PRAGMA foreign_keys = {'ON' if foreign_keys else 'OFF'}")
+    connection.set_authorizer(_authorizer)
+    if budget is not None:
+        connection.set_progress_handler(budget.progress, 1)
+
+
 def _checkpoint(controller: FaultController | None, operation: str) -> None:
     if controller is None:
         return
@@ -219,6 +237,7 @@ def _run(
     commit: bool,
     foreign_keys: bool,
     enable_faults: bool,
+    reopen_before_observe: bool,
     max_statements: int,
     max_vm_steps: int | None,
 ) -> bytes:
@@ -227,13 +246,18 @@ def _run(
     )
     controller = FaultController(fault) if enable_faults and fault is not None else None
     budget = _VmBudget(max_vm_steps) if max_vm_steps is not None else None
-    connection = sqlite3.connect(":memory:", isolation_level=None)
+
+    temporary_directory: tempfile.TemporaryDirectory[str] | None = None
+    database = ":memory:"
+    if reopen_before_observe:
+        temporary_directory = tempfile.TemporaryDirectory(
+            prefix="systems-conformance-sqlite-"
+        )
+        database = str(Path(temporary_directory.name) / "case.sqlite")
+
+    connection = sqlite3.connect(database, isolation_level=None)
     try:
-        _disable_extension_loading(connection)
-        connection.execute(f"PRAGMA foreign_keys = {'ON' if foreign_keys else 'OFF'}")
-        connection.set_authorizer(_authorizer)
-        if budget is not None:
-            connection.set_progress_handler(budget.progress, 1)
+        _configure_connection(connection, foreign_keys=foreign_keys, budget=budget)
         try:
             for statement in setup:
                 _checkpoint(controller, "setup")
@@ -256,6 +280,11 @@ def _run(
                 connection.rollback()
             connection.set_authorizer(_authorizer)
 
+            if reopen_before_observe:
+                connection.close()
+                connection = sqlite3.connect(database, isolation_level=None)
+                _configure_connection(connection, foreign_keys=foreign_keys, budget=budget)
+
             _checkpoint(controller, "observe")
             observation = _execute_statement(connection, observe)
         except sqlite3.Error as exc:
@@ -270,6 +299,8 @@ def _run(
         ).encode("utf-8")
     finally:
         connection.close()
+        if temporary_directory is not None:
+            temporary_directory.cleanup()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -280,6 +311,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             commit=args.commit,
             foreign_keys=args.foreign_keys,
             enable_faults=args.enable_faults,
+            reopen_before_observe=args.reopen_before_observe,
             max_statements=args.max_statements,
             max_vm_steps=args.max_vm_steps,
         )
