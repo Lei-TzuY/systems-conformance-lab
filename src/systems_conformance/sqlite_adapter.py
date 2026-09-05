@@ -23,7 +23,11 @@ class SQLiteQueryTarget:
 
     def __post_init__(self) -> None:
         if self.max_vm_steps is not None:
-            if isinstance(self.max_vm_steps, bool) or self.max_vm_steps <= 0:
+            if (
+                isinstance(self.max_vm_steps, bool)
+                or not isinstance(self.max_vm_steps, int)
+                or self.max_vm_steps <= 0
+            ):
                 raise ValueError("max_vm_steps must be a positive integer or None")
 
     def as_command_target(self) -> CommandTarget:
