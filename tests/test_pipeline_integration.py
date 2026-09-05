@@ -22,6 +22,23 @@ HIGH_BIT_BUGGY_SCRIPT = (
     "import sys; data = sys.stdin.buffer.read(); "
     "sys.stdout.buffer.write(b'BAD' if data == b'\\x80' else data)"
 )
+WRITE_FAULT_SCRIPT = """
+import sys
+import tempfile
+
+from systems_conformance import FaultSpec, FaultingBinaryWriter
+
+data = sys.stdin.buffer.read()
+with tempfile.TemporaryFile() as sink:
+    writer = FaultingBinaryWriter(
+        sink,
+        FaultSpec(operation="write", occurrence=0, kind="short_write"),
+        short_write_bytes=2,
+    )
+    writer.write(data)
+    sink.seek(0)
+    sys.stdout.buffer.write(sink.read())
+"""
 
 
 def target(script: str) -> CommandTarget:
@@ -93,3 +110,18 @@ def test_deterministic_byte_mutations_find_real_process_mismatch() -> None:
     assert campaign.failing_case == b"\x80"
     assert campaign.comparison is not None
     assert campaign.comparison.classification == "product_mismatch"
+
+
+def test_binary_write_fault_adapter_changes_real_process_filesystem_result() -> None:
+    harness = DifferentialHarness(
+        candidate=target(WRITE_FAULT_SCRIPT),
+        oracle=target(ECHO_SCRIPT),
+    )
+
+    run = harness.evaluate(b"abcdef")
+
+    assert run.comparison.classification == "product_mismatch"
+    assert run.comparison.dimensions == ("stdout",)
+    assert run.candidate.stdout.data == b"ab"
+    assert run.oracle.stdout.data == b"abcdef"
+    assert run.candidate.infrastructure_error is None
