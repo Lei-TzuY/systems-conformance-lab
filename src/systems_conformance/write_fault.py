@@ -8,11 +8,11 @@ class FaultingBinaryWriter:
     """Inject one deterministic write fault into a binary stream.
 
     The adapter is deliberately narrow: it models a target's binary ``write``
-    boundary and supports only ``short_write`` and ``io_error`` effects.  The
+    boundary and supports only ``short_write`` and ``io_error`` effects. The
     underlying stream remains owned by the caller.
     """
 
-    __slots__ = ("_controller", "_sink", "_short_write_bytes")
+    __slots__ = ("_controller", "_short_write_bytes", "_sink")
 
     def __init__(
         self,
