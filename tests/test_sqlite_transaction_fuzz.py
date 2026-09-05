@@ -80,6 +80,6 @@ def test_real_sqlite_fuzz_discovers_foreign_key_difference() -> None:
     assert campaign.classification == "product_mismatch"
     assert campaign.failing_case == corpus(1)
     assert campaign.comparison is not None
-    assert campaign.comparison.candidate.infrastructure_error is None
-    assert campaign.comparison.oracle.infrastructure_error is None
+    assert campaign.comparison.candidate_infrastructure_error is None
+    assert campaign.comparison.oracle_infrastructure_error is None
     assert campaign.exhausted_budget is False
