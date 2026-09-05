@@ -3,6 +3,11 @@ from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
 from .fault import FaultController, FaultSpec
+from .feedback_fuzz import (
+    FeedbackCampaignResult,
+    FeedbackCorpusEntry,
+    run_feedback_guided_campaign,
+)
 from .fuzz import (
     FuzzCampaignResult,
     FuzzDiscoveryResult,
@@ -30,6 +35,8 @@ __all__ = [
     "FaultController",
     "FaultSpec",
     "FaultingBinaryWriter",
+    "FeedbackCampaignResult",
+    "FeedbackCorpusEntry",
     "FuzzCampaignResult",
     "FuzzDiscoveryResult",
     "FuzzFailure",
@@ -48,6 +55,7 @@ __all__ = [
     "load_repro_bundle",
     "reduce_case",
     "run_failure_discovery_campaign",
+    "run_feedback_guided_campaign",
     "run_fuzz_campaign",
     "run_process",
     "write_repro_bundle",
