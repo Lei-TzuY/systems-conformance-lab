@@ -3,7 +3,13 @@ from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
 from .fault import FaultController, FaultSpec
-from .fuzz import FuzzCampaignResult, run_fuzz_campaign
+from .fuzz import (
+    FuzzCampaignResult,
+    FuzzDiscoveryResult,
+    FuzzFailure,
+    run_failure_discovery_campaign,
+    run_fuzz_campaign,
+)
 from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproReplay
 from .model import ExecutionResult, StreamCapture
 from .reducer import ReductionResult, reduce_case
@@ -25,6 +31,8 @@ __all__ = [
     "FaultSpec",
     "FaultingBinaryWriter",
     "FuzzCampaignResult",
+    "FuzzDiscoveryResult",
+    "FuzzFailure",
     "LoadedReproBundle",
     "ReductionResult",
     "ReproBundle",
@@ -39,6 +47,7 @@ __all__ = [
     "import_repro_archive",
     "load_repro_bundle",
     "reduce_case",
+    "run_failure_discovery_campaign",
     "run_fuzz_campaign",
     "run_process",
     "write_repro_bundle",
