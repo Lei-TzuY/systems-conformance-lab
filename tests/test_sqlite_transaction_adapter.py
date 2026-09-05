@@ -189,11 +189,15 @@ def test_transaction_target_rejects_unknown_fault_operation() -> None:
     )
 
 
+def test_transaction_target_rejects_non_bool_fault_flag() -> None:
+    with pytest.raises(TypeError, match="enable_faults must be a bool"):
+        SQLiteTransactionTarget(enable_faults=1)  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     ("kwargs", "message"),
     [
         ({"finalize": "other"}, "finalize must be 'commit' or 'rollback'"),
-        ({"enable_faults": 1}, "enable_faults must be a bool"),
         ({"max_statements": 0}, "max_statements must be a positive integer"),
         ({"max_statements": True}, "max_statements must be a positive integer"),
         ({"max_vm_steps": 0}, "max_vm_steps must be a positive integer or None"),
