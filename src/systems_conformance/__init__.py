@@ -1,3 +1,4 @@
+from .byte_fuzz import DeterministicByteMutations
 from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
@@ -14,6 +15,7 @@ from .runner import run_process
 __all__ = [
     "CommandTarget",
     "ComparisonResult",
+    "DeterministicByteMutations",
     "DifferentialHarness",
     "DifferentialRun",
     "ExecutionResult",
