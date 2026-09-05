@@ -24,6 +24,10 @@ from .retention import RetentionResult, enforce_repro_retention
 from .runner import run_process
 from .sqlite_adapter import SQLiteQueryTarget
 from .sqlite_transaction_adapter import SQLiteTransactionTarget
+from .sqlite_transaction_reducer import (
+    sqlite_transaction_statement_count,
+    sqlite_transaction_statement_deletions,
+)
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
 from .write_fault import FaultingBinaryWriter
 
@@ -65,5 +69,7 @@ __all__ = [
     "run_feedback_guided_campaign",
     "run_fuzz_campaign",
     "run_process",
+    "sqlite_transaction_statement_count",
+    "sqlite_transaction_statement_deletions",
     "write_repro_bundle",
 ]
