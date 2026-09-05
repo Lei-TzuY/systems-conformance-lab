@@ -45,7 +45,13 @@ def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any]]:
     return setup, query, params
 
 
-def _authorizer(action: int, _arg1: str | None, _arg2: str | None, _db: str | None, _source: str | None) -> int:
+def _authorizer(
+    action: int,
+    _arg1: str | None,
+    _arg2: str | None,
+    _db: str | None,
+    _source: str | None,
+) -> int:
     forbidden = {sqlite3.SQLITE_ATTACH, sqlite3.SQLITE_DETACH, sqlite3.SQLITE_PRAGMA}
     return sqlite3.SQLITE_DENY if action in forbidden else sqlite3.SQLITE_OK
 
@@ -58,11 +64,17 @@ def _normalize(value: Any) -> Any:
     raise TypeError(f"unsupported SQLite result type: {type(value).__name__}")
 
 
+def _disable_extension_loading(connection: sqlite3.Connection) -> None:
+    disable = getattr(connection, "enable_load_extension", None)
+    if disable is not None:
+        disable(False)
+
+
 def _run(raw: bytes, *, foreign_keys: bool) -> bytes:
     setup, query, params = _decode_request(raw)
     connection = sqlite3.connect(":memory:")
     try:
-        connection.enable_load_extension(False)
+        _disable_extension_loading(connection)
         connection.execute(f"PRAGMA foreign_keys = {'ON' if foreign_keys else 'OFF'}")
         connection.set_authorizer(_authorizer)
         for statement in setup:
@@ -71,7 +83,10 @@ def _run(raw: bytes, *, foreign_keys: bool) -> bytes:
         columns = [] if cursor.description is None else [item[0] for item in cursor.description]
         rows = [[_normalize(value) for value in row] for row in cursor.fetchall()]
         payload = {"columns": columns, "rows": rows}
-        return (json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+        return (
+            json.dumps(payload, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+            + "\n"
+        ).encode("utf-8")
     finally:
         connection.close()
 
