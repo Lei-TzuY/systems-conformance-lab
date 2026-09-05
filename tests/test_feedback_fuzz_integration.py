@@ -40,7 +40,7 @@ def test_feedback_campaign_grows_from_real_trace_features() -> None:
         return run.comparison, features
 
     def mutate(case: bytes, index: int) -> bytes:
-        return (b"A" + case) if index == 0 else (case + b"Z")
+        return b"A" + case if index == 0 else case + b"Z"
 
     result = run_feedback_guided_campaign(
         seeds=(b"",),
