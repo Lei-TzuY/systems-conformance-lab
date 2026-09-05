@@ -14,6 +14,8 @@ from .model import ExecutionResult, StreamCapture
 DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024
 DEFAULT_MAX_TOTAL_OUTPUT_BYTES = 16 * 1024 * 1024
 _READ_CHUNK_BYTES = 64 * 1024
+_POST_EXIT_DRAIN_SECONDS = 0.1
+_POST_CLEANUP_JOIN_SECONDS = 0.5
 
 
 class _OutputBudget:
@@ -73,8 +75,10 @@ def _write_stdin(stream: BinaryIO, data: bytes) -> None:
             pass
 
 
-def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
-    if process.poll() is not None:
+def _terminate_process_tree(
+    process: subprocess.Popen[bytes], *, root_may_have_exited: bool = False
+) -> None:
+    if process.poll() is not None and not root_may_have_exited:
         return
 
     if os.name == "posix":
@@ -95,7 +99,18 @@ def _terminate_process_tree(process: subprocess.Popen[bytes]) -> None:
         )
         return
 
-    process.kill()
+    if process.poll() is None:
+        process.kill()
+
+
+def _join_io_threads(threads: Sequence[threading.Thread], timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    for thread in threads:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        thread.join(remaining)
+    return all(not thread.is_alive() for thread in threads)
 
 
 def run_process(
@@ -114,6 +129,8 @@ def run_process(
     Only ``max_output_bytes`` from each stream are retained in memory. A separate aggregate
     ``max_total_output_bytes`` budget bounds how much output the untrusted process may emit at
     all; exceeding it terminates the process tree and is classified as an infrastructure error.
+    Descendants that keep inherited stdio pipes open after the root exits are also bounded and
+    classified as infrastructure failures rather than allowing reader threads to hang forever.
     """
     if not argv:
         raise ValueError("argv must contain at least one element")
@@ -186,6 +203,7 @@ def run_process(
         args=(process.stdin, stdin),
         daemon=True,
     )
+    io_threads = (stdout_thread, stderr_thread, stdin_thread)
     stdout_thread.start()
     stderr_thread.start()
     stdin_thread.start()
@@ -206,9 +224,14 @@ def run_process(
         time.sleep(0.005)
 
     process.wait()
-    stdout_thread.join()
-    stderr_thread.join()
-    stdin_thread.join()
+
+    if not _join_io_threads(io_threads, _POST_EXIT_DRAIN_SECONDS):
+        if infrastructure_error is None and not timed_out:
+            infrastructure_error = (
+                "ProcessTreeLeak: descendant kept inherited stdio open after root exit"
+            )
+        _terminate_process_tree(process, root_may_have_exited=True)
+        _join_io_threads(io_threads, _POST_CLEANUP_JOIN_SECONDS)
 
     if infrastructure_error is None and budget.exceeded.is_set():
         infrastructure_error = (
