@@ -8,16 +8,27 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
+from .fault import FaultController, FaultSpec
+
 
 class ProtocolError(ValueError):
     pass
 
 
+class InjectedFault(RuntimeError):
+    def __init__(self, spec: FaultSpec) -> None:
+        self.spec = spec
+        super().__init__(f"{spec.kind} {spec.operation} {spec.occurrence}")
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--foreign-keys", action="store_true")
-    group.add_argument("--no-foreign-keys", action="store_true")
+    foreign_keys = parser.add_mutually_exclusive_group(required=True)
+    foreign_keys.add_argument("--foreign-keys", action="store_true")
+    foreign_keys.add_argument("--no-foreign-keys", action="store_true")
+    faults = parser.add_mutually_exclusive_group(required=True)
+    faults.add_argument("--enable-faults", action="store_true")
+    faults.add_argument("--disable-faults", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -34,7 +45,27 @@ def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any]]:
+def _decode_fault(value: Any) -> FaultSpec | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ProtocolError("fault must be an object")
+    if set(value) != {"operation", "occurrence", "kind"}:
+        raise ProtocolError("fault must contain operation, occurrence, and kind")
+
+    operation = value["operation"]
+    occurrence = value["occurrence"]
+    kind = value["kind"]
+    if operation not in {"setup", "query"}:
+        raise ProtocolError("fault operation must be setup or query")
+    if isinstance(occurrence, bool) or not isinstance(occurrence, int) or occurrence < 0:
+        raise ProtocolError("fault occurrence must be a non-negative integer")
+    if kind != "abort":
+        raise ProtocolError("unsupported SQLite fault kind")
+    return FaultSpec(operation=operation, occurrence=occurrence, kind=kind)
+
+
+def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any], FaultSpec | None]:
     try:
         payload = json.loads(
             raw.decode("utf-8"),
@@ -45,12 +76,13 @@ def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any]]:
         raise ProtocolError("input must be one UTF-8 JSON document") from exc
     if not isinstance(payload, dict):
         raise ProtocolError("top-level request must be an object")
-    if set(payload) - {"setup", "query", "params"}:
+    if set(payload) - {"setup", "query", "params", "fault"}:
         raise ProtocolError("request contains unknown fields")
 
     setup = payload.get("setup", [])
     query = payload.get("query")
     params = payload.get("params", [])
+    fault = _decode_fault(payload.get("fault"))
     if not isinstance(setup, list) or not all(isinstance(item, str) for item in setup):
         raise ProtocolError("setup must be a list of SQL strings")
     if not isinstance(query, str) or not query.strip():
@@ -69,7 +101,7 @@ def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any]]:
                 raise ProtocolError("floating params must be finite")
             continue
         raise ProtocolError("params may only contain JSON scalar values")
-    return setup, query, params
+    return setup, query, params, fault
 
 
 def _authorizer(
@@ -97,15 +129,26 @@ def _disable_extension_loading(connection: sqlite3.Connection) -> None:
         disable(False)
 
 
-def _run(raw: bytes, *, foreign_keys: bool) -> bytes:
-    setup, query, params = _decode_request(raw)
+def _checkpoint(controller: FaultController | None, operation: str) -> None:
+    if controller is None:
+        return
+    triggered = controller.checkpoint(operation)
+    if triggered is not None:
+        raise InjectedFault(triggered)
+
+
+def _run(raw: bytes, *, foreign_keys: bool, enable_faults: bool) -> bytes:
+    setup, query, params, fault = _decode_request(raw)
+    controller = FaultController(fault) if enable_faults and fault is not None else None
     connection = sqlite3.connect(":memory:")
     try:
         _disable_extension_loading(connection)
         connection.execute(f"PRAGMA foreign_keys = {'ON' if foreign_keys else 'OFF'}")
         connection.set_authorizer(_authorizer)
         for statement in setup:
+            _checkpoint(controller, "setup")
             connection.execute(statement)
+        _checkpoint(controller, "query")
         cursor = connection.execute(query, params)
         columns = [] if cursor.description is None else [item[0] for item in cursor.description]
         rows = [[_normalize(value) for value in row] for row in cursor.fetchall()]
@@ -121,10 +164,17 @@ def _run(raw: bytes, *, foreign_keys: bool) -> bytes:
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
     try:
-        output = _run(sys.stdin.buffer.read(), foreign_keys=args.foreign_keys)
+        output = _run(
+            sys.stdin.buffer.read(),
+            foreign_keys=args.foreign_keys,
+            enable_faults=args.enable_faults,
+        )
     except ProtocolError as exc:
         sys.stderr.write(f"protocol_error: {exc}\n")
         return 2
+    except InjectedFault as exc:
+        sys.stderr.write(f"injected_fault: {exc}\n")
+        return 5
     except sqlite3.Error as exc:
         error_name = getattr(exc, "sqlite_errorname", type(exc).__name__)
         sys.stderr.write(f"sqlite_error: {error_name}\n")

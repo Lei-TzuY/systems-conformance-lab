@@ -6,15 +6,26 @@ from systems_conformance import DifferentialHarness
 from systems_conformance.sqlite_adapter import SQLiteQueryTarget
 
 
-def _request(*, setup: list[str], query: str, params: list[object] | None = None) -> bytes:
-    return json.dumps(
-        {"setup": setup, "query": query, "params": [] if params is None else params},
-        separators=(",", ":"),
-    ).encode()
+def _request(
+    *,
+    setup: list[str],
+    query: str,
+    params: list[object] | None = None,
+    fault: dict[str, object] | None = None,
+) -> bytes:
+    payload: dict[str, object] = {
+        "setup": setup,
+        "query": query,
+        "params": [] if params is None else params,
+    }
+    if fault is not None:
+        payload["fault"] = fault
+    return json.dumps(payload, separators=(",", ":")).encode()
 
 
-def _execute(case: bytes):
-    return SQLiteQueryTarget().as_command_target().execute(
+def _execute(case: bytes, *, target: SQLiteQueryTarget | None = None):
+    sqlite_target = SQLiteQueryTarget() if target is None else target
+    return sqlite_target.as_command_target().execute(
         case,
         timeout_seconds=2.0,
         max_output_bytes=4096,
@@ -94,6 +105,54 @@ def test_sqlite_target_rejects_integer_outside_binding_range_without_traceback()
     )
 
 
+def test_sqlite_fault_checkpoint_triggers_at_exact_setup_occurrence() -> None:
+    case = _request(
+        setup=[
+            "CREATE TABLE items(v INTEGER)",
+            "INSERT INTO items VALUES (1)",
+            "INSERT INTO items VALUES (2)",
+        ],
+        query="SELECT COUNT(*) FROM items",
+        fault={"operation": "setup", "occurrence": 1, "kind": "abort"},
+    )
+
+    result = _execute(case, target=SQLiteQueryTarget(enable_faults=True))
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 5
+    assert result.stdout.text == ""
+    assert result.stderr.text.strip() == "injected_fault: abort setup 1"
+
+
+def test_sqlite_fault_checkpoint_is_not_triggered_past_last_occurrence() -> None:
+    case = _request(
+        setup=["CREATE TABLE items(v INTEGER)", "INSERT INTO items VALUES (1)"],
+        query="SELECT COUNT(*) FROM items",
+        fault={"operation": "setup", "occurrence": 2, "kind": "abort"},
+    )
+
+    result = _execute(case, target=SQLiteQueryTarget(enable_faults=True))
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0
+    assert json.loads(result.stdout.text) == {"columns": ["COUNT(*)"], "rows": [[1]]}
+
+
+def test_sqlite_target_rejects_unsupported_fault_kind() -> None:
+    result = _execute(
+        _request(
+            setup=[],
+            query="SELECT 1",
+            fault={"operation": "query", "occurrence": 0, "kind": "corrupt"},
+        ),
+        target=SQLiteQueryTarget(enable_faults=True),
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 2
+    assert result.stderr.text.strip() == "protocol_error: unsupported SQLite fault kind"
+
+
 def test_strict_protocol_rejection_is_deterministic_across_real_targets() -> None:
     candidate = SQLiteQueryTarget(foreign_keys=True).as_command_target()
     oracle = SQLiteQueryTarget(foreign_keys=False).as_command_target()
@@ -125,6 +184,28 @@ def test_real_sqlite_targets_produce_product_mismatch_for_configuration_differen
     run = harness.evaluate(case)
 
     assert run.candidate.exit_code == 3
+    assert run.oracle.exit_code == 0
+    assert run.comparison.classification == "product_mismatch"
+    assert run.signature is not None
+    assert run.signature.kind == "product_mismatch"
+
+
+def test_real_differential_harness_observes_injected_sqlite_fault() -> None:
+    candidate = SQLiteQueryTarget(enable_faults=True).as_command_target()
+    oracle = SQLiteQueryTarget(enable_faults=False).as_command_target()
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    case = _request(
+        setup=["CREATE TABLE items(v INTEGER)", "INSERT INTO items VALUES (1)"],
+        query="SELECT v FROM items",
+        fault={"operation": "query", "occurrence": 0, "kind": "abort"},
+    )
+
+    run = harness.evaluate(case)
+
+    assert run.candidate.infrastructure_error is None
+    assert run.oracle.infrastructure_error is None
+    assert run.candidate.exit_code == 5
+    assert run.candidate.stderr.text.strip() == "injected_fault: abort query 0"
     assert run.oracle.exit_code == 0
     assert run.comparison.classification == "product_mismatch"
     assert run.signature is not None

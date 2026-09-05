@@ -17,6 +17,7 @@ class SQLiteQueryTarget:
     """
 
     foreign_keys: bool = True
+    enable_faults: bool = False
 
     def as_command_target(self) -> CommandTarget:
         """Return the argv-only CommandTarget used by DifferentialHarness."""
@@ -26,5 +27,6 @@ class SQLiteQueryTarget:
                 "-m",
                 "systems_conformance._sqlite_worker",
                 "--foreign-keys" if self.foreign_keys else "--no-foreign-keys",
+                "--enable-faults" if self.enable_faults else "--disable-faults",
             )
         )
