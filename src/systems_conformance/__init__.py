@@ -7,6 +7,7 @@ from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproR
 from .model import ExecutionResult, StreamCapture
 from .reducer import ReductionResult, reduce_case
 from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
+from .repro_archive import export_repro_archive, import_repro_archive
 from .retention import RetentionResult, enforce_repro_retention
 from .runner import run_process
 
@@ -28,8 +29,10 @@ __all__ = [
     "StreamCapture",
     "compare_results",
     "enforce_repro_retention",
+    "export_repro_archive",
     "failure_signature",
     "hierarchical_byte_deletions",
+    "import_repro_archive",
     "load_repro_bundle",
     "reduce_case",
     "run_fuzz_campaign",
