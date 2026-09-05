@@ -121,7 +121,7 @@ def test_binary_write_fault_adapter_changes_real_process_filesystem_result() -> 
     run = harness.evaluate(b"abcdef")
 
     assert run.comparison.classification == "product_mismatch"
-    assert run.comparison.dimensions == ("stdout",)
+    assert run.comparison.mismatches == ("stdout",)
     assert run.candidate.stdout.data == b"ab"
     assert run.oracle.stdout.data == b"abcdef"
     assert run.candidate.infrastructure_error is None
