@@ -23,6 +23,7 @@ from .repro_archive import export_repro_archive, import_repro_archive
 from .retention import RetentionResult, enforce_repro_retention
 from .runner import run_process
 from .sqlite_adapter import SQLiteQueryTarget
+from .sqlite_transaction_adapter import SQLiteTransactionTarget
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
 from .write_fault import FaultingBinaryWriter
 
@@ -49,6 +50,7 @@ __all__ = [
     "ReproReplay",
     "RetentionResult",
     "SQLiteQueryTarget",
+    "SQLiteTransactionTarget",
     "StreamCapture",
     "compare_results",
     "enforce_repro_retention",
