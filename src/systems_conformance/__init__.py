@@ -24,6 +24,7 @@ from .retention import RetentionResult, enforce_repro_retention
 from .runner import run_process
 from .sqlite_adapter import SQLiteQueryTarget
 from .sqlite_transaction_adapter import SQLiteTransactionTarget
+from .sqlite_transaction_fuzz import SQLiteTransactionParameterMutations
 from .sqlite_transaction_reducer import (
     sqlite_transaction_statement_count,
     sqlite_transaction_statement_deletions,
@@ -54,6 +55,7 @@ __all__ = [
     "ReproReplay",
     "RetentionResult",
     "SQLiteQueryTarget",
+    "SQLiteTransactionParameterMutations",
     "SQLiteTransactionTarget",
     "StreamCapture",
     "compare_results",
