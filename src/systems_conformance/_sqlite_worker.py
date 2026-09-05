@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sqlite3
 import sys
 from collections.abc import Sequence
@@ -20,9 +21,26 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _reject_json_constant(value: str) -> Any:
+    raise ProtocolError(f"non-finite JSON constant is not supported: {value}")
+
+
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ProtocolError(f"duplicate JSON object field: {key}")
+        result[key] = value
+    return result
+
+
 def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any]]:
     try:
-        payload = json.loads(raw.decode("utf-8"))
+        payload = json.loads(
+            raw.decode("utf-8"),
+            parse_constant=_reject_json_constant,
+            object_pairs_hook=_unique_json_object,
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ProtocolError("input must be one UTF-8 JSON document") from exc
     if not isinstance(payload, dict):
@@ -40,8 +58,17 @@ def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any]]:
     if not isinstance(params, list):
         raise ProtocolError("params must be a JSON array")
     for value in params:
-        if value is not None and not isinstance(value, (bool, int, float, str)):
-            raise ProtocolError("params may only contain JSON scalar values")
+        if value is None or isinstance(value, (bool, str)):
+            continue
+        if isinstance(value, int):
+            if not -(1 << 63) <= value < (1 << 63):
+                raise ProtocolError("integer params must fit signed 64-bit SQLite range")
+            continue
+        if isinstance(value, float):
+            if not math.isfinite(value):
+                raise ProtocolError("floating params must be finite")
+            continue
+        raise ProtocolError("params may only contain JSON scalar values")
     return setup, query, params
 
 
