@@ -155,10 +155,10 @@ def test_sqlite_target_rejects_unsupported_fault_kind() -> None:
     assert result.stderr.text.strip() == "protocol_error: unsupported SQLite fault kind"
 
 
-@pytest.mark.parametrize("max_vm_steps", [0, -1, True])
-def test_sqlite_target_rejects_invalid_vm_budgets(max_vm_steps: int) -> None:
+@pytest.mark.parametrize("max_vm_steps", [0, -1, True, 1.5, "10"])
+def test_sqlite_target_rejects_invalid_vm_budgets(max_vm_steps: object) -> None:
     with pytest.raises(ValueError, match="max_vm_steps must be a positive integer or None"):
-        SQLiteQueryTarget(max_vm_steps=max_vm_steps)
+        SQLiteQueryTarget(max_vm_steps=max_vm_steps)  # type: ignore[arg-type]
 
 
 def test_sqlite_vm_budget_allows_small_query_within_limit() -> None:
