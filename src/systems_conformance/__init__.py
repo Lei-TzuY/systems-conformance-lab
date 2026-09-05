@@ -1,3 +1,4 @@
+from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
 from .fault import FaultController, FaultSpec
@@ -28,6 +29,7 @@ __all__ = [
     "compare_results",
     "enforce_repro_retention",
     "failure_signature",
+    "hierarchical_byte_deletions",
     "load_repro_bundle",
     "reduce_case",
     "run_fuzz_campaign",
