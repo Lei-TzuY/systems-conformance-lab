@@ -27,7 +27,7 @@ class SQLiteTransactionTarget:
         if self.finalize not in {"commit", "rollback"}:
             raise ValueError("finalize must be 'commit' or 'rollback'")
         if not isinstance(self.enable_faults, bool):
-            raise ValueError("enable_faults must be a bool")
+            raise TypeError("enable_faults must be a bool")
         if (
             isinstance(self.max_statements, bool)
             or not isinstance(self.max_statements, int)
