@@ -100,7 +100,7 @@ def test_import_rejects_invalid_bundle_before_publication(tmp_path) -> None:
         archive.writestr("manifest.json", b"{}")
 
     destination = tmp_path / "imported"
-    with pytest.raises(ValueError, match="unsupported repro bundle schema"):
+    with pytest.raises(ValueError, match="fields do not match v1 schema"):
         import_repro_archive(archive_path, destination)
 
     assert not destination.exists()
