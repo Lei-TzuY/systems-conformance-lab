@@ -12,6 +12,18 @@ REPRO_BUNDLE_SCHEMA_VERSION = "systems-conformance.repro-bundle.v1"
 DEFAULT_MAX_REPRO_INPUT_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_REPRO_MANIFEST_BYTES = 1024 * 1024
 _EXPECTED_REPRO_MEMBERS = frozenset({"input.bin", "manifest.json"})
+_REQUIRED_MANIFEST_FIELDS = frozenset(
+    {
+        "candidate",
+        "comparison",
+        "failure_signature",
+        "input",
+        "metadata",
+        "oracle",
+        "schema_version",
+    }
+)
+_OPTIONAL_MANIFEST_FIELDS = frozenset({"replay_context_sha256"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +55,19 @@ def _require_regular_file(path: Path, *, label: str) -> None:
 
 def _reject_json_constant(value: str) -> None:
     raise ValueError(f"repro manifest contains non-finite JSON constant: {value}")
+
+
+def _validate_manifest_fields(manifest: dict[str, object]) -> None:
+    fields = frozenset(manifest)
+    unexpected = sorted(fields - _REQUIRED_MANIFEST_FIELDS - _OPTIONAL_MANIFEST_FIELDS)
+    missing = sorted(_REQUIRED_MANIFEST_FIELDS - fields)
+    if unexpected or missing:
+        details = []
+        if unexpected:
+            details.append(f"unexpected={unexpected!r}")
+        if missing:
+            details.append(f"missing={missing!r}")
+        raise ValueError(f"repro manifest fields do not match v1 schema: {', '.join(details)}")
 
 
 def _load_failure_signature(value: object) -> FailureSignature:
@@ -88,10 +113,11 @@ def load_repro_bundle(
 
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
-    ``input.bin``. Symlinks, unexpected direct children, oversized artifacts,
-    schema drift, non-standard JSON constants, declared input-size mismatches,
-    and present input-content digest mismatches are rejected before execution.
-    Older v1 bundles without a digest remain loadable for replay compatibility.
+    ``input.bin``. Symlinks, unexpected direct children, unexpected or missing
+    manifest fields, oversized artifacts, schema drift, non-standard JSON
+    constants, declared input-size mismatches, and present input-content digest
+    mismatches are rejected before execution. Older v1 bundles without an input
+    digest or replay-context fingerprint remain loadable for replay compatibility.
     """
 
     if max_input_bytes < 0:
@@ -133,6 +159,7 @@ def load_repro_bundle(
 
     if not isinstance(manifest, dict):
         raise TypeError("repro manifest must be an object")
+    _validate_manifest_fields(manifest)
     if manifest.get("schema_version") != REPRO_BUNDLE_SCHEMA_VERSION:
         raise ValueError("unsupported repro bundle schema")
 
