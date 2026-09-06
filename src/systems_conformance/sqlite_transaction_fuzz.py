@@ -54,21 +54,42 @@ def _decode_seed(seed: bytes) -> dict[str, Any]:
     return payload
 
 
+def _same_json_scalar(left: Any, right: Any) -> bool:
+    return type(left) is type(right) and left == right
+
+
+def _ordered_replacements(value: Any, candidates: Sequence[Any]) -> tuple[Any, ...]:
+    replacements: list[Any] = []
+    for candidate in candidates:
+        if _same_json_scalar(candidate, value):
+            continue
+        if any(_same_json_scalar(candidate, existing) for existing in replacements):
+            continue
+        replacements.append(candidate)
+    return tuple(replacements)
+
+
 def _mutation_values(value: Any) -> tuple[Any, ...]:
     if value is None:
-        return (0, "")
+        return _ordered_replacements(value, (0, "", False))
     if isinstance(value, bool):
-        return (not value,)
+        return _ordered_replacements(value, (not value, None, 0, 1, "0", "1"))
     if isinstance(value, int):
         if not -(1 << 63) <= value < (1 << 63):
             raise ValueError("integer params must fit signed 64-bit SQLite range")
-        return tuple(candidate for candidate in (0, 1, -1) if candidate != value)
+        return _ordered_replacements(
+            value,
+            (0, 1, -1, None, float(value), str(value), "x"),
+        )
     if isinstance(value, float):
         if not math.isfinite(value):
             raise ValueError("floating params must be finite")
-        return tuple(candidate for candidate in (0.0, 1.0, -1.0) if candidate != value)
+        return _ordered_replacements(
+            value,
+            (0.0, 1.0, -1.0, None, str(value), "x"),
+        )
     if isinstance(value, str):
-        return tuple(candidate for candidate in ("", "0", "x") if candidate != value)
+        return _ordered_replacements(value, ("", "0", "x", None, 0, 1))
     raise TypeError("SQLite statement params may only contain JSON scalar values")
 
 
@@ -121,11 +142,11 @@ class SQLiteTransactionParameterMutations:
     """Finite deterministic corpus for SQLite transaction scalar parameters.
 
     Exact seed bytes are emitted first. Mutations then walk seeds, transaction
-    statements and their parameters, followed by observation parameters, using a
-    small type-aware replacement schedule. JSON structure and all non-parameter
-    fields are preserved, so the SQLite worker receives syntactically valid protocol
-    shapes rather than random byte damage. Duplicate and oversized generated cases
-    are skipped.
+    statements and their parameters, followed by observation parameters. Each scalar
+    receives a bounded type-aware schedule containing same-type boundary values and
+    selected cross-type values so SQLite affinity/coercion behavior can be exercised
+    without corrupting the JSON protocol shape. Duplicate and oversized generated
+    cases are skipped.
     """
 
     __slots__ = ("_cases",)
