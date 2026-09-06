@@ -1,5 +1,6 @@
 import os
 import shutil
+import stat
 import tempfile
 import zipfile
 from pathlib import Path
@@ -24,6 +25,14 @@ def _regular_zip_info(name: str) -> zipfile.ZipInfo:
     info.create_system = 3
     info.external_attr = 0o100644 << 16
     return info
+
+
+def _has_explicit_non_regular_unix_type(member: zipfile.ZipInfo) -> bool:
+    if member.create_system != 3:
+        return False
+    mode = member.external_attr >> 16
+    file_type = stat.S_IFMT(mode)
+    return file_type not in {0, stat.S_IFREG}
 
 
 def export_repro_archive(
@@ -112,7 +121,7 @@ def import_repro_archive(
 
         by_name = {member.filename: member for member in members}
         for member in members:
-            if member.is_dir():
+            if member.is_dir() or _has_explicit_non_regular_unix_type(member):
                 raise ValueError("repro archive members must be regular files")
             if member.flag_bits & 0x1:
                 raise ValueError("encrypted repro archive members are not supported")
