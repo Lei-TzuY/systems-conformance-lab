@@ -1,4 +1,5 @@
 import json
+import math
 
 import pytest
 
@@ -79,6 +80,28 @@ def test_manifest_is_deterministic_across_destinations(tmp_path):
     )
 
     assert first.manifest_path.read_bytes() == second.manifest_path.read_bytes()
+
+
+def test_non_finite_metadata_is_rejected_and_partial_bundle_is_cleaned(tmp_path):
+    candidate = _result("candidate")
+    oracle = _result("oracle")
+    comparison = compare_results(candidate, oracle)
+    signature = failure_signature(comparison)
+    assert signature is not None
+    destination = tmp_path / "case"
+
+    with pytest.raises(ValueError, match="Out of range float values are not JSON compliant"):
+        write_repro_bundle(
+            destination,
+            input_bytes=b"case",
+            candidate=candidate,
+            oracle=oracle,
+            comparison=comparison,
+            signature=signature,
+            metadata={"score": math.nan},
+        )
+
+    assert not destination.exists()
 
 
 def test_existing_destination_is_never_overwritten(tmp_path):
