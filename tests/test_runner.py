@@ -123,6 +123,18 @@ def test_missing_executable_is_infrastructure_error() -> None:
     assert result.timed_out is False
 
 
+def test_invalid_spawn_argv_is_structured_infrastructure_error() -> None:
+    result = run_process([sys.executable, "-c", "pass", "embedded\x00nul"])
+
+    assert result.exit_code is None
+    assert result.signal is None
+    assert result.timed_out is False
+    assert result.infrastructure_error is not None
+    assert result.infrastructure_error.startswith("ValueError:")
+    assert result.stdout.total_bytes == 0
+    assert result.stderr.total_bytes == 0
+
+
 def test_result_is_json_serializable_and_versioned() -> None:
     result = run_process(python("print('ok')"))
     encoded = json.dumps(result.to_dict(), sort_keys=True)

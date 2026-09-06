@@ -64,6 +64,21 @@ def test_harness_classifies_hard_output_budget_as_infrastructure_failure() -> No
     assert result.signature.kind == "infrastructure_failure"
 
 
+def test_harness_classifies_invalid_spawn_configuration_as_infrastructure_failure() -> None:
+    malformed = CommandTarget((sys.executable, "-c", "pass", "embedded\x00nul"))
+    harness = DifferentialHarness(candidate=malformed, oracle=target(ECHO_SCRIPT))
+
+    result = harness.evaluate(b"input")
+
+    assert result.comparison.classification == "infrastructure_failure"
+    assert result.candidate.infrastructure_error is not None
+    assert result.candidate.infrastructure_error.startswith("ValueError:")
+    assert result.oracle.exit_code == 0
+    assert result.oracle.infrastructure_error is None
+    assert result.signature is not None
+    assert result.signature.kind == "infrastructure_failure"
+
+
 def test_command_target_snapshots_mutable_configuration(tmp_path) -> None:
     argv = [sys.executable, "-c", ECHO_SCRIPT]
     env = {"ONLY": "value"}
