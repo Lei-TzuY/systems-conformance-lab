@@ -56,6 +56,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     faults = parser.add_mutually_exclusive_group(required=True)
     faults.add_argument("--enable-faults", action="store_true")
     faults.add_argument("--disable-faults", action="store_true")
+    parser.add_argument("--max-sql-bytes", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
     return parser.parse_args(argv)
 
@@ -93,7 +94,17 @@ def _decode_fault(value: Any) -> FaultSpec | None:
     return FaultSpec(operation=operation, occurrence=occurrence, kind=kind)
 
 
-def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any], FaultSpec | None]:
+def _validate_sql(sql: Any, *, field: str, max_sql_bytes: int) -> str:
+    if not isinstance(sql, str) or not sql.strip():
+        raise ProtocolError(f"{field} must be a non-empty SQL string")
+    if len(sql.encode("utf-8")) > max_sql_bytes:
+        raise ProtocolError(f"{field} exceeds max_sql_bytes: {max_sql_bytes}")
+    return sql
+
+
+def _decode_request(
+    raw: bytes, *, max_sql_bytes: int
+) -> tuple[list[str], str, list[Any], FaultSpec | None]:
     try:
         payload = json.loads(
             raw.decode("utf-8"),
@@ -113,8 +124,11 @@ def _decode_request(raw: bytes) -> tuple[list[str], str, list[Any], FaultSpec | 
     fault = _decode_fault(payload.get("fault"))
     if not isinstance(setup, list) or not all(isinstance(item, str) for item in setup):
         raise ProtocolError("setup must be a list of SQL strings")
-    if not isinstance(query, str) or not query.strip():
-        raise ProtocolError("query must be a non-empty SQL string")
+    setup = [
+        _validate_sql(statement, field="setup statement", max_sql_bytes=max_sql_bytes)
+        for statement in setup
+    ]
+    query = _validate_sql(query, field="query", max_sql_bytes=max_sql_bytes)
     if not isinstance(params, list):
         raise ProtocolError("params must be a JSON array")
     for value in params:
@@ -170,9 +184,10 @@ def _run(
     *,
     foreign_keys: bool,
     enable_faults: bool,
+    max_sql_bytes: int,
     max_vm_steps: int | None,
 ) -> bytes:
-    setup, query, params, fault = _decode_request(raw)
+    setup, query, params, fault = _decode_request(raw, max_sql_bytes=max_sql_bytes)
     controller = FaultController(fault) if enable_faults and fault is not None else None
     budget = _VmBudget(max_vm_steps) if max_vm_steps is not None else None
     connection = sqlite3.connect(":memory:")
@@ -210,6 +225,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             sys.stdin.buffer.read(),
             foreign_keys=args.foreign_keys,
             enable_faults=args.enable_faults,
+            max_sql_bytes=args.max_sql_bytes,
             max_vm_steps=args.max_vm_steps,
         )
     except ProtocolError as exc:
