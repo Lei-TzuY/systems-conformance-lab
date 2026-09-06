@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .comparator import ComparisonResult
+from .comparator import COMPARISON_SCHEMA_VERSION, ComparisonResult
 from .failure import FAILURE_SIGNATURE_SCHEMA_VERSION, FailureSignature
 from .model import SCHEMA_VERSION, ExecutionResult
 
@@ -41,6 +41,16 @@ _REQUIRED_EXECUTION_FIELDS = frozenset(
     }
 )
 _REQUIRED_STREAM_CAPTURE_FIELDS = frozenset({"text", "total_bytes", "truncated"})
+_REQUIRED_COMPARISON_FIELDS = frozenset(
+    {
+        "equivalent",
+        "classification",
+        "mismatches",
+        "candidate_infrastructure_error",
+        "oracle_infrastructure_error",
+        "schema_version",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,6 +144,19 @@ def _validate_execution_record(value: object, *, label: str) -> None:
         )
 
 
+def _validate_comparison_record(value: object) -> None:
+    if not isinstance(value, dict):
+        raise TypeError("repro comparison record must be an object")
+    _validate_fields(
+        value,
+        required=_REQUIRED_COMPARISON_FIELDS,
+        optional=frozenset(),
+        label="repro comparison record",
+    )
+    if value.get("schema_version") != COMPARISON_SCHEMA_VERSION:
+        raise ValueError("unsupported repro comparison schema")
+
+
 def _load_failure_signature(value: object) -> FailureSignature:
     if not isinstance(value, dict):
         raise TypeError("failure_signature must be an object")
@@ -184,8 +207,8 @@ def load_repro_bundle(
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
     ``input.bin``. Symlinks, unexpected direct children, unexpected or missing
-    top-level, input-record, execution-record, stream-capture, and
-    failure-signature fields, oversized artifacts, schema drift, non-standard
+    top-level, input-record, execution-record, stream-capture, comparison-record,
+    and failure-signature fields, oversized artifacts, schema drift, non-standard
     JSON constants, declared input-size mismatches, and present input-content
     digest mismatches are rejected before execution. Older v1 bundles without an
     input digest or replay-context fingerprint remain loadable for replay
@@ -270,8 +293,7 @@ def load_repro_bundle(
 
     _validate_execution_record(manifest.get("candidate"), label="candidate")
     _validate_execution_record(manifest.get("oracle"), label="oracle")
-    if not isinstance(manifest.get("comparison"), dict):
-        raise TypeError("repro comparison record must be an object")
+    _validate_comparison_record(manifest.get("comparison"))
 
     metadata = manifest.get("metadata")
     if not isinstance(metadata, dict):
