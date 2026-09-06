@@ -104,11 +104,50 @@ def test_hard_output_budget_changes_replay_context() -> None:
     assert baseline.replay_context_sha256 != constrained.replay_context_sha256
 
 
+def test_input_budget_changes_replay_context() -> None:
+    command = target(ECHO_SCRIPT)
+    baseline = DifferentialHarness(candidate=command, oracle=command)
+    constrained = DifferentialHarness(
+        candidate=command,
+        oracle=command,
+        max_input_bytes=1024,
+    )
+
+    assert baseline.replay_context_sha256 != constrained.replay_context_sha256
+
+
+def test_harness_input_budget_is_enforced_before_real_target_launch(tmp_path) -> None:
+    marker = tmp_path / "launched.txt"
+    script = (
+        "from pathlib import Path; import sys; "
+        "Path(sys.argv[1]).write_text('launched'); "
+        "data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data)"
+    )
+    command = CommandTarget((sys.executable, "-c", script, str(marker)))
+    harness = DifferentialHarness(
+        candidate=command,
+        oracle=command,
+        max_input_bytes=4,
+    )
+
+    result = harness.evaluate(b"1234")
+    assert result.comparison.classification == "match"
+    assert result.candidate.stdout.text == "1234"
+    assert marker.read_text() == "launched"
+
+    marker.unlink()
+    with pytest.raises(ValueError, match="stdin exceeds max_input_bytes"):
+        harness.evaluate(b"12345")
+    assert not marker.exists()
+
+
 def test_harness_rejects_invalid_execution_limits() -> None:
     command = target(ECHO_SCRIPT)
 
     with pytest.raises(ValueError, match="timeout_seconds"):
         DifferentialHarness(candidate=command, oracle=command, timeout_seconds=0)
+    with pytest.raises(ValueError, match="max_input_bytes"):
+        DifferentialHarness(candidate=command, oracle=command, max_input_bytes=-1)
     with pytest.raises(ValueError, match="max_output_bytes"):
         DifferentialHarness(candidate=command, oracle=command, max_output_bytes=-1)
     with pytest.raises(ValueError, match="max_total_output_bytes"):

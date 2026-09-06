@@ -12,7 +12,12 @@ from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
 from .model import ExecutionResult
 from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
-from .runner import DEFAULT_MAX_OUTPUT_BYTES, DEFAULT_MAX_TOTAL_OUTPUT_BYTES, run_process
+from .runner import (
+    DEFAULT_MAX_INPUT_BYTES,
+    DEFAULT_MAX_OUTPUT_BYTES,
+    DEFAULT_MAX_TOTAL_OUTPUT_BYTES,
+    run_process,
+)
 
 
 @dataclass(frozen=True, slots=True, init=False)
@@ -59,6 +64,7 @@ class CommandTarget:
         timeout_seconds: float,
         max_output_bytes: int,
         max_total_output_bytes: int,
+        max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
     ) -> ExecutionResult:
         """Execute this target through the shared safe process runner."""
         process_env = None if self.env is None else dict(self.env)
@@ -68,6 +74,7 @@ class CommandTarget:
             cwd=self.cwd,
             env=process_env,
             timeout_seconds=timeout_seconds,
+            max_input_bytes=max_input_bytes,
             max_output_bytes=max_output_bytes,
             max_total_output_bytes=max_total_output_bytes,
         )
@@ -116,12 +123,15 @@ class DifferentialHarness:
     candidate: CommandTarget
     oracle: CommandTarget
     timeout_seconds: float = 10.0
+    max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES
     max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES
     max_total_output_bytes: int = DEFAULT_MAX_TOTAL_OUTPUT_BYTES
 
     def __post_init__(self) -> None:
         if self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
+        if self.max_input_bytes < 0:
+            raise ValueError("max_input_bytes must be non-negative")
         if self.max_output_bytes < 0:
             raise ValueError("max_output_bytes must be non-negative")
         if self.max_total_output_bytes <= 0:
@@ -134,6 +144,7 @@ class DifferentialHarness:
             "candidate": self.candidate._replay_identity(),
             "oracle": self.oracle._replay_identity(),
             "timeout_seconds": self.timeout_seconds,
+            "max_input_bytes": self.max_input_bytes,
             "max_output_bytes": self.max_output_bytes,
             "max_total_output_bytes": self.max_total_output_bytes,
         }
@@ -150,12 +161,14 @@ class DifferentialHarness:
         candidate = self.candidate.execute(
             input_bytes,
             timeout_seconds=self.timeout_seconds,
+            max_input_bytes=self.max_input_bytes,
             max_output_bytes=self.max_output_bytes,
             max_total_output_bytes=self.max_total_output_bytes,
         )
         oracle = self.oracle.execute(
             input_bytes,
             timeout_seconds=self.timeout_seconds,
+            max_input_bytes=self.max_input_bytes,
             max_output_bytes=self.max_output_bytes,
             max_total_output_bytes=self.max_total_output_bytes,
         )
@@ -220,10 +233,11 @@ class DifferentialHarness:
         """Safely load a repro bundle and execute its input against this harness.
 
         Harness-written bundles carry a SHA-256 fingerprint over the candidate,
-        oracle, timeout, capture limit, and hard aggregate output-limit configuration.
-        The fingerprint contains no raw argv/env/cwd values. By default replay rejects
-        a different context before executing untrusted input. Callers may explicitly
-        disable this check when intentionally testing a reproducer against a changed target.
+        oracle, timeout, input/output execution limits, and hard aggregate output-limit
+        configuration. The fingerprint contains no raw argv/env/cwd values. By default
+        replay rejects a different context before executing untrusted input. Callers may
+        explicitly disable this check when intentionally testing a reproducer against a
+        changed target.
         """
         bundle = load_repro_bundle(
             path,
