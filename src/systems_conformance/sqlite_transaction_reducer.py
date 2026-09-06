@@ -147,6 +147,24 @@ def _statement_params(statement: dict[str, Any], *, field: str) -> list[Any]:
     return params
 
 
+def _fault(payload: dict[str, Any]) -> dict[str, Any] | None:
+    fault = payload.get("fault")
+    if fault is None:
+        return None
+    if not isinstance(fault, dict):
+        raise TypeError("fault must be a JSON object")
+    if set(fault) != {"operation", "occurrence", "kind"}:
+        raise ValueError("fault must contain operation, occurrence, and kind")
+    if fault["operation"] not in {"setup", "transaction", "finalize", "observe"}:
+        raise ValueError("fault operation is unsupported")
+    occurrence = fault["occurrence"]
+    if isinstance(occurrence, bool) or not isinstance(occurrence, int) or occurrence < 0:
+        raise ValueError("fault occurrence must be a non-negative integer")
+    if fault["kind"] != "abort":
+        raise ValueError("fault kind is unsupported")
+    return fault
+
+
 def sqlite_transaction_statement_count(case: bytes) -> int:
     """Return the reducible setup + transaction statement count for one case."""
     payload = _decode_case(case)
@@ -228,3 +246,40 @@ def sqlite_transaction_parameter_reductions(case: bytes) -> Iterable[bytes]:
                 encoded = _encode(candidate)
                 if sqlite_transaction_parameter_complexity(encoded) < current_complexity:
                     yield encoded
+
+
+def sqlite_transaction_fault_occurrence_complexity(case: bytes) -> int:
+    """Return the non-negative occurrence index for an optional SQLite fault."""
+    payload = _decode_case(case)
+    fault = _fault(payload)
+    if fault is None:
+        return 0
+    occurrence = fault["occurrence"]
+    assert isinstance(occurrence, int) and not isinstance(occurrence, bool)
+    return occurrence
+
+
+def sqlite_transaction_fault_occurrence_reductions(case: bytes) -> Iterable[bytes]:
+    """Yield bounded lower fault-occurrence probes while preserving fault identity.
+
+    The operation and kind remain unchanged and only ``occurrence`` is rewritten.
+    Candidates use the same early-checkpoint boundary values exercised by the
+    deterministic fuzz corpus and are emitted only when they strictly decrease the
+    explicit occurrence complexity measure.
+    """
+    payload = _decode_case(case)
+    fault = _fault(payload)
+    if fault is None:
+        return
+
+    current = sqlite_transaction_fault_occurrence_complexity(case)
+    for replacement in (0, 1, 2):
+        if replacement >= current:
+            continue
+        candidate = dict(payload)
+        candidate_fault = dict(fault)
+        candidate_fault["occurrence"] = replacement
+        candidate["fault"] = candidate_fault
+        encoded = _encode(candidate)
+        if sqlite_transaction_fault_occurrence_complexity(encoded) < current:
+            yield encoded
