@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -128,8 +129,8 @@ class DifferentialHarness:
     max_total_output_bytes: int = DEFAULT_MAX_TOTAL_OUTPUT_BYTES
 
     def __post_init__(self) -> None:
-        if self.timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be positive")
+        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be finite and positive")
         if self.max_input_bytes < 0:
             raise ValueError("max_input_bytes must be non-negative")
         if self.max_output_bytes < 0:
