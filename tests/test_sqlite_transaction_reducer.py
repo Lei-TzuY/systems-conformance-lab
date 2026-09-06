@@ -6,21 +6,28 @@ import pytest
 
 from systems_conformance import DifferentialHarness, SQLiteTransactionTarget, reduce_case
 from systems_conformance.sqlite_transaction_reducer import (
+    sqlite_transaction_parameter_complexity,
+    sqlite_transaction_parameter_reductions,
     sqlite_transaction_statement_count,
     sqlite_transaction_statement_deletions,
 )
 
 
-def _statement(sql: str) -> dict[str, object]:
-    return {"sql": sql, "params": []}
+def _statement(sql: str, params: list[object] | None = None) -> dict[str, object]:
+    return {"sql": sql, "params": [] if params is None else params}
 
 
-def _case(*, setup: list[str], transaction: list[dict[str, object]]) -> bytes:
+def _case(
+    *,
+    setup: list[str],
+    transaction: list[dict[str, object]],
+    observe: dict[str, object] | None = None,
+) -> bytes:
     return json.dumps(
         {
             "setup": setup,
             "transaction": transaction,
-            "observe": _statement("SELECT v FROM items ORDER BY v"),
+            "observe": observe or _statement("SELECT v FROM items ORDER BY v"),
         },
         separators=(",", ":"),
     ).encode()
@@ -45,6 +52,40 @@ def test_statement_deletions_are_deterministic_and_keep_transaction_non_empty() 
 def test_statement_reducer_rejects_invalid_shape() -> None:
     with pytest.raises(ValueError, match="transaction must be a non-empty list"):
         list(sqlite_transaction_statement_deletions(b'{"setup":[],"transaction":[]}'))
+
+
+def test_parameter_reductions_are_deterministic_and_strictly_simpler() -> None:
+    case = _case(
+        setup=["CREATE TABLE items(v INTEGER)"],
+        transaction=[_statement("INSERT INTO items VALUES (?)", [42])],
+        observe=_statement("SELECT v FROM items WHERE v = ?", ["42"]),
+    )
+
+    first = list(sqlite_transaction_parameter_reductions(case))
+    second = list(sqlite_transaction_parameter_reductions(case))
+    original_complexity = sqlite_transaction_parameter_complexity(case)
+
+    assert first == second
+    assert first
+    assert all(
+        sqlite_transaction_parameter_complexity(candidate) < original_complexity
+        for candidate in first
+    )
+    decoded = [json.loads(candidate) for candidate in first]
+    assert decoded[0]["transaction"][0]["params"] == [0]
+    assert any(candidate["observe"]["params"] == [""] for candidate in decoded)
+    assert all(candidate["setup"] == ["CREATE TABLE items(v INTEGER)"] for candidate in decoded)
+
+
+def test_parameter_reducer_rejects_non_scalar_params() -> None:
+    case = _case(
+        setup=[],
+        transaction=[_statement("SELECT ?", [[1]])],
+        observe=_statement("SELECT 1"),
+    )
+
+    with pytest.raises(TypeError, match="JSON scalar"):
+        sqlite_transaction_parameter_complexity(case)
 
 
 def test_real_commit_rollback_failure_reduces_to_required_statements() -> None:
@@ -81,4 +122,34 @@ def test_real_commit_rollback_failure_reduces_to_required_statements() -> None:
     assert reduced["setup"] == ["CREATE TABLE items(v INTEGER)"]
     assert reduced["transaction"] == [_statement("INSERT INTO items VALUES (42)")]
     assert sqlite_transaction_statement_count(reduction.reduced) == 2
+    assert reduction.accepted_steps > 0
+
+
+def test_real_commit_rollback_failure_reduces_transaction_scalar() -> None:
+    candidate = SQLiteTransactionTarget(finalize="commit").as_command_target()
+    oracle = SQLiteTransactionTarget(finalize="rollback").as_command_target()
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    initial = _case(
+        setup=["CREATE TABLE items(v INTEGER)"],
+        transaction=[_statement("INSERT INTO items VALUES (?)", [987654])],
+        observe=_statement("SELECT COUNT(*) AS count FROM items"),
+    )
+    initial_run = harness.evaluate(initial)
+    assert initial_run.signature is not None
+    signature = initial_run.signature
+
+    reduction = reduce_case(
+        initial,
+        candidates=sqlite_transaction_parameter_reductions,
+        preserves_failure=lambda case: harness.preserves_failure(case, signature),
+        measure=sqlite_transaction_parameter_complexity,
+        max_evaluations=32,
+    )
+    reduced = json.loads(reduction.reduced)
+    rerun = harness.evaluate(reduction.reduced)
+
+    assert rerun.signature == signature
+    assert rerun.comparison.classification == "product_mismatch"
+    assert reduced["transaction"][0]["params"] == [None]
+    assert sqlite_transaction_parameter_complexity(reduction.reduced) == 0
     assert reduction.accepted_steps > 0
