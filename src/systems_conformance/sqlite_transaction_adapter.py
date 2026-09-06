@@ -6,6 +6,8 @@ from typing import Literal
 
 from .harness import CommandTarget
 
+DEFAULT_MAX_SQL_BYTES = 64 * 1024
+
 
 @dataclass(frozen=True, slots=True)
 class SQLiteTransactionTarget:
@@ -25,6 +27,7 @@ class SQLiteTransactionTarget:
     enable_faults: bool = False
     reopen_before_observe: bool = False
     max_statements: int = 64
+    max_sql_bytes: int = DEFAULT_MAX_SQL_BYTES
     max_vm_steps: int | None = None
 
     def __post_init__(self) -> None:
@@ -40,6 +43,12 @@ class SQLiteTransactionTarget:
             or self.max_statements <= 0
         ):
             raise ValueError("max_statements must be a positive integer")
+        if (
+            isinstance(self.max_sql_bytes, bool)
+            or not isinstance(self.max_sql_bytes, int)
+            or self.max_sql_bytes <= 0
+        ):
+            raise ValueError("max_sql_bytes must be a positive integer")
         if self.max_vm_steps is not None and (
             isinstance(self.max_vm_steps, bool)
             or not isinstance(self.max_vm_steps, int)
@@ -63,6 +72,8 @@ class SQLiteTransactionTarget:
             ),
             "--max-statements",
             str(self.max_statements),
+            "--max-sql-bytes",
+            str(self.max_sql_bytes),
         ]
         if self.max_vm_steps is not None:
             argv.extend(("--max-vm-steps", str(self.max_vm_steps)))
