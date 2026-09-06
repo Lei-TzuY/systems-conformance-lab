@@ -11,6 +11,7 @@ from .model import ExecutionResult
 REPRO_BUNDLE_SCHEMA_VERSION = "systems-conformance.repro-bundle.v1"
 DEFAULT_MAX_REPRO_INPUT_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_REPRO_MANIFEST_BYTES = 1024 * 1024
+_EXPECTED_REPRO_MEMBERS = frozenset({"input.bin", "manifest.json"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -87,10 +88,10 @@ def load_repro_bundle(
 
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
-    ``input.bin``. Symlinks, oversized artifacts, schema drift, non-standard
-    JSON constants, declared input-size mismatches, and present input-content
-    digest mismatches are rejected before execution. Older v1 bundles without
-    a digest remain loadable for replay compatibility.
+    ``input.bin``. Symlinks, unexpected direct children, oversized artifacts,
+    schema drift, non-standard JSON constants, declared input-size mismatches,
+    and present input-content digest mismatches are rejected before execution.
+    Older v1 bundles without a digest remain loadable for replay compatibility.
     """
 
     if max_input_bytes < 0:
@@ -101,6 +102,17 @@ def load_repro_bundle(
     path = Path(path)
     if path.is_symlink() or not path.is_dir():
         raise ValueError(f"repro bundle path must be a directory: {path}")
+
+    members = frozenset(child.name for child in path.iterdir())
+    if members != _EXPECTED_REPRO_MEMBERS:
+        unexpected = sorted(members - _EXPECTED_REPRO_MEMBERS)
+        missing = sorted(_EXPECTED_REPRO_MEMBERS - members)
+        details = []
+        if unexpected:
+            details.append(f"unexpected={unexpected!r}")
+        if missing:
+            details.append(f"missing={missing!r}")
+        raise ValueError(f"repro bundle members do not match v1 layout: {', '.join(details)}")
 
     manifest_path = path / "manifest.json"
     input_path = path / "input.bin"
