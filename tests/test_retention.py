@@ -3,30 +3,44 @@ import os
 
 import pytest
 
-from systems_conformance.repro import REPRO_BUNDLE_SCHEMA_VERSION
+from systems_conformance.comparator import compare_results
+from systems_conformance.failure import failure_signature
+from systems_conformance.model import ExecutionResult, StreamCapture
+from systems_conformance.repro import REPRO_BUNDLE_SCHEMA_VERSION, write_repro_bundle
 from systems_conformance.retention import enforce_repro_retention
 
 _ONE_SECOND_NS = 1_000_000_000
 
 
-def _bundle(
-    root,
-    name: str,
-    *,
-    mtime_ns: int,
-    schema: str = REPRO_BUNDLE_SCHEMA_VERSION,
-):
-    path = root / name
-    path.mkdir()
-    (path / "input.bin").write_bytes(b"case")
-    manifest = {
-        "schema_version": schema,
-        "input": {"path": "input.bin", "size_bytes": 4},
-    }
-    manifest_path = path / "manifest.json"
-    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
-    os.utime(manifest_path, ns=(mtime_ns, mtime_ns))
-    return path
+def _result(stdout: str) -> ExecutionResult:
+    encoded = stdout.encode()
+    return ExecutionResult(
+        argv=("tool",),
+        duration_ms=1,
+        timed_out=False,
+        exit_code=0,
+        signal=None,
+        stdout=StreamCapture(stdout, len(encoded), False),
+        stderr=StreamCapture("", 0, False),
+    )
+
+
+def _bundle(root, name: str, *, mtime_ns: int):
+    candidate = _result("candidate")
+    oracle = _result("oracle")
+    comparison = compare_results(candidate, oracle)
+    signature = failure_signature(comparison)
+    assert signature is not None
+    bundle = write_repro_bundle(
+        root / name,
+        input_bytes=b"case",
+        candidate=candidate,
+        oracle=oracle,
+        comparison=comparison,
+        signature=signature,
+    )
+    os.utime(bundle.manifest_path, ns=(mtime_ns, mtime_ns))
+    return bundle.path
 
 
 def test_retention_keeps_newest_bundles(tmp_path):
@@ -55,12 +69,11 @@ def test_retention_uses_name_as_stable_tiebreaker(tmp_path):
 
 def test_retention_ignores_unknown_or_malformed_children(tmp_path):
     valid = _bundle(tmp_path, "valid", mtime_ns=_ONE_SECOND_NS)
-    unknown = _bundle(
-        tmp_path,
-        "unknown",
-        mtime_ns=2 * _ONE_SECOND_NS,
-        schema="future.v2",
-    )
+    unknown = _bundle(tmp_path, "unknown", mtime_ns=2 * _ONE_SECOND_NS)
+    unknown_manifest = unknown / "manifest.json"
+    manifest = json.loads(unknown_manifest.read_text(encoding="utf-8"))
+    manifest["schema_version"] = "future.v2"
+    unknown_manifest.write_text(json.dumps(manifest), encoding="utf-8")
     malformed = tmp_path / "malformed"
     malformed.mkdir()
     (malformed / "input.bin").write_bytes(b"case")
@@ -89,6 +102,28 @@ def test_retention_ignores_bundle_with_mismatched_input_size(tmp_path):
     assert result.removed == ()
     assert result.ignored == (mismatched,)
     assert mismatched.exists()
+
+
+def test_retention_ignores_same_size_input_digest_tampering(tmp_path):
+    tampered = _bundle(tmp_path, "tampered", mtime_ns=_ONE_SECOND_NS)
+    (tampered / "input.bin").write_bytes(b"CASE")
+
+    result = enforce_repro_retention(tmp_path, max_bundles=0)
+
+    assert result.removed == ()
+    assert result.ignored == (tampered,)
+    assert tampered.exists()
+
+
+def test_retention_ignores_bundle_with_unexpected_member(tmp_path):
+    tampered = _bundle(tmp_path, "tampered", mtime_ns=_ONE_SECOND_NS)
+    (tampered / "notes.txt").write_text("unexpected", encoding="utf-8")
+
+    result = enforce_repro_retention(tmp_path, max_bundles=0)
+
+    assert result.removed == ()
+    assert result.ignored == (tampered,)
+    assert tampered.exists()
 
 
 def test_retention_does_not_follow_symlinked_bundle(tmp_path):
@@ -123,3 +158,7 @@ def test_invalid_limits_are_rejected(tmp_path):
         enforce_repro_retention(tmp_path, max_bundles=-1)
     with pytest.raises(TypeError):
         enforce_repro_retention(tmp_path, max_bundles=True)
+
+
+def test_schema_constant_matches_writer_contract():
+    assert REPRO_BUNDLE_SCHEMA_VERSION == "systems-conformance.repro-bundle.v1"
