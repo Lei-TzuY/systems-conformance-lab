@@ -1,3 +1,4 @@
+import stat
 import sys
 import zipfile
 
@@ -59,6 +60,24 @@ def test_import_rejects_unexpected_member_before_destination_creation(tmp_path) 
 
     assert not destination.exists()
     assert not (tmp_path.parent / "escape").exists()
+
+
+def test_import_rejects_explicit_symlink_member_before_destination_creation(tmp_path) -> None:
+    archive_path = tmp_path / "symlink.zip"
+    symlink = zipfile.ZipInfo("input.bin")
+    symlink.compress_type = zipfile.ZIP_STORED
+    symlink.create_system = 3
+    symlink.external_attr = (stat.S_IFLNK | 0o777) << 16
+
+    with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
+        archive.writestr(symlink, b"manifest.json")
+        archive.writestr("manifest.json", b"{}")
+
+    destination = tmp_path / "imported"
+    with pytest.raises(ValueError, match="members must be regular files"):
+        import_repro_archive(archive_path, destination)
+
+    assert not destination.exists()
 
 
 def test_import_rejects_compressed_members_before_destination_creation(tmp_path) -> None:
