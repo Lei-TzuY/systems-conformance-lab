@@ -134,6 +134,8 @@ def run_process(
     all; exceeding it terminates the process tree and is classified as an infrastructure error.
     Descendants that keep inherited stdio pipes open after the root exits are also bounded and
     classified as infrastructure failures rather than allowing reader threads to hang forever.
+    OS- and runtime-level spawn failures, including invalid argv/environment encodings, are
+    returned as structured infrastructure errors instead of escaping the execution pipeline.
     """
     if not argv:
         raise ValueError("argv must contain at least one element")
@@ -173,7 +175,7 @@ def run_process(
             shell=False,
             **popen_kwargs,
         )
-    except OSError as exc:
+    except (OSError, ValueError) as exc:
         duration_ms = round((time.monotonic() - started) * 1000)
         empty = StreamCapture(text="", total_bytes=0, truncated=False)
         return ExecutionResult(
