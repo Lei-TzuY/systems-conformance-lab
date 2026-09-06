@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import pytest
 
@@ -53,15 +54,15 @@ def test_input_at_budget_is_delivered_intact() -> None:
     assert result.stdout.text == payload.decode()
 
 
-def test_oversized_input_is_rejected_before_target_executes(tmp_path: object) -> None:
-    marker = os.path.join(str(tmp_path), "executed")
+def test_oversized_input_is_rejected_before_target_executes(tmp_path: Path) -> None:
+    marker = tmp_path / "executed"
     with pytest.raises(ValueError, match="stdin exceeds max_input_bytes"):
         run_process(
-            python("from pathlib import Path; import sys; Path(sys.argv[1]).write_text('ran')", marker),
+            python("from pathlib import Path; import sys; Path(sys.argv[1]).write_text('ran')", str(marker)),
             stdin=b"12345",
             max_input_bytes=4,
         )
-    assert not os.path.exists(marker)
+    assert not marker.exists()
 
 
 def test_output_capture_is_bounded_but_reports_total_size() -> None:
