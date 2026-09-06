@@ -1,3 +1,4 @@
+import math
 import sys
 
 import pytest
@@ -138,6 +139,29 @@ def test_harness_input_budget_is_enforced_before_real_target_launch(tmp_path) ->
     marker.unlink()
     with pytest.raises(ValueError, match="stdin exceeds max_input_bytes"):
         harness.evaluate(b"12345")
+    assert not marker.exists()
+
+
+@pytest.mark.parametrize("timeout_seconds", [math.nan, math.inf, -math.inf])
+def test_harness_rejects_non_finite_timeout_before_real_target_launch(
+    tmp_path, timeout_seconds: float
+) -> None:
+    marker = tmp_path / "launched.txt"
+    command = CommandTarget(
+        (
+            sys.executable,
+            "-c",
+            "from pathlib import Path; import sys; Path(sys.argv[1]).write_text('launched')",
+            str(marker),
+        )
+    )
+
+    with pytest.raises(ValueError, match="timeout_seconds must be finite and positive"):
+        DifferentialHarness(
+            candidate=command,
+            oracle=command,
+            timeout_seconds=timeout_seconds,
+        )
     assert not marker.exists()
 
 
