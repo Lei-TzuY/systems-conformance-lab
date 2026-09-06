@@ -27,6 +27,23 @@ def _validate_params(params: Any, *, field: str) -> list[Any]:
     return params
 
 
+def _validate_fault(fault: Any) -> dict[str, Any] | None:
+    if fault is None:
+        return None
+    if not isinstance(fault, dict):
+        raise TypeError("fault must be a JSON object")
+    if set(fault) != {"operation", "occurrence", "kind"}:
+        raise ValueError("fault must contain operation, occurrence, and kind")
+    if fault["operation"] not in {"setup", "transaction", "finalize", "observe"}:
+        raise ValueError("fault operation is unsupported")
+    occurrence = fault["occurrence"]
+    if isinstance(occurrence, bool) or not isinstance(occurrence, int) or occurrence < 0:
+        raise ValueError("fault occurrence must be a non-negative integer")
+    if fault["kind"] != "abort":
+        raise ValueError("fault kind is unsupported")
+    return fault
+
+
 def _decode_seed(seed: bytes) -> dict[str, Any]:
     try:
         payload = json.loads(
@@ -51,6 +68,7 @@ def _decode_seed(seed: bytes) -> dict[str, Any]:
     if not isinstance(observe, dict):
         raise TypeError("observe must be a JSON object")
     _validate_params(observe.get("params", []), field="observe")
+    _validate_fault(payload.get("fault"))
     return payload
 
 
@@ -138,15 +156,41 @@ def _append_parameter_mutations(
             seen.add(encoded)
 
 
+def _append_fault_occurrence_mutations(
+    *,
+    payload: dict[str, Any],
+    cases: list[bytes],
+    seen: set[bytes],
+    max_case_bytes: int,
+) -> None:
+    fault = _validate_fault(payload.get("fault"))
+    if fault is None:
+        return
+    occurrence = fault["occurrence"]
+    for replacement in (0, 1, 2):
+        if replacement == occurrence:
+            continue
+        candidate = dict(payload)
+        candidate_fault = dict(fault)
+        candidate_fault["occurrence"] = replacement
+        candidate["fault"] = candidate_fault
+        encoded = _encode(candidate)
+        if len(encoded) > max_case_bytes or encoded in seen:
+            continue
+        cases.append(encoded)
+        seen.add(encoded)
+
+
 class SQLiteTransactionParameterMutations:
-    """Finite deterministic corpus for SQLite transaction scalar parameters.
+    """Finite deterministic corpus for SQLite transaction scalar and fault inputs.
 
     Exact seed bytes are emitted first. Mutations then walk seeds, transaction
-    statements and their parameters, followed by observation parameters. Each scalar
-    receives a bounded type-aware schedule containing same-type boundary values and
-    selected cross-type values so SQLite affinity/coercion behavior can be exercised
-    without corrupting the JSON protocol shape. Duplicate and oversized generated
-    cases are skipped.
+    statements and their parameters, followed by observation parameters and bounded
+    fault-occurrence probes. Parameter scalars receive a type-aware schedule containing
+    same-type boundary values and selected cross-type values. Fault operation and kind
+    remain fixed while occurrence probes 0, 1, and 2, exercising early logical
+    checkpoints without corrupting the JSON protocol shape. Duplicate and oversized
+    generated cases are skipped.
     """
 
     __slots__ = ("_cases",)
@@ -195,6 +239,12 @@ class SQLiteTransactionParameterMutations:
                 statement=observe,
                 section="observe",
                 statement_index=None,
+                cases=cases,
+                seen=seen,
+                max_case_bytes=max_case_bytes,
+            )
+            _append_fault_occurrence_mutations(
+                payload=payload,
                 cases=cases,
                 seen=seen,
                 max_case_bytes=max_case_bytes,

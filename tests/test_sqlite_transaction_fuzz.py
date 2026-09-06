@@ -46,6 +46,18 @@ def _observation_case(*, observed_value: int = 0) -> bytes:
     ).encode()
 
 
+def _fault_case(*, occurrence: int = 99) -> bytes:
+    return json.dumps(
+        {
+            "setup": ["CREATE TABLE items(v INTEGER)"],
+            "transaction": [{"sql": "INSERT INTO items VALUES (1)", "params": []}],
+            "observe": {"sql": "SELECT count(*) AS n FROM items", "params": []},
+            "fault": {"operation": "transaction", "occurrence": occurrence, "kind": "abort"},
+        },
+        separators=(",", ":"),
+    ).encode()
+
+
 def test_parameter_mutations_are_finite_deterministic_and_cross_type() -> None:
     seed = _case(parent_id=1)
     corpus = SQLiteTransactionParameterMutations([seed])
@@ -99,6 +111,22 @@ def test_observation_parameter_mutations_follow_transaction_parameters() -> None
     assert json.loads(corpus(12))["observe"]["params"] == ["x"]
 
 
+def test_fault_occurrence_mutations_are_bounded_and_preserve_fault_shape() -> None:
+    seed = _fault_case(occurrence=99)
+    corpus = SQLiteTransactionParameterMutations([seed])
+
+    assert corpus.case_count == 4
+    assert [json.loads(corpus(index))["fault"]["occurrence"] for index in range(1, 4)] == [
+        0,
+        1,
+        2,
+    ]
+    for index in range(1, 4):
+        fault = json.loads(corpus(index))["fault"]
+        assert fault["operation"] == "transaction"
+        assert fault["kind"] == "abort"
+
+
 def test_parameter_mutations_validate_bounds_and_shape() -> None:
     seed = _case()
     with pytest.raises(ValueError, match="max_case_bytes"):
@@ -120,6 +148,10 @@ def test_parameter_mutations_validate_bounds_and_shape() -> None:
     with pytest.raises(TypeError, match="observe params"):
         SQLiteTransactionParameterMutations(
             [b'{"transaction":[{"sql":"SELECT 1","params":[]}],"observe":{"params":{}}}']
+        )
+    with pytest.raises(ValueError, match="fault occurrence"):
+        SQLiteTransactionParameterMutations(
+            [b'{"transaction":[{"sql":"SELECT 1"}],"observe":{"sql":"SELECT 1"},"fault":{"operation":"transaction","occurrence":-1,"kind":"abort"}}']
         )
 
 
@@ -159,6 +191,31 @@ def test_real_sqlite_fuzz_discovers_commit_difference_via_observation_parameter(
     initial = harness.evaluate(corpus(0))
     assert initial.comparison.classification == "match"
     assert json.loads(corpus(1))["observe"]["params"] == [1]
+
+    campaign = run_fuzz_campaign(
+        cases=corpus,
+        evaluate=harness.compare,
+        max_evaluations=corpus.case_count,
+    )
+
+    assert campaign.evaluations == 2
+    assert campaign.classification == "product_mismatch"
+    assert campaign.failing_case == corpus(1)
+    assert campaign.comparison is not None
+    assert campaign.comparison.candidate_infrastructure_error is None
+    assert campaign.comparison.oracle_infrastructure_error is None
+    assert campaign.exhausted_budget is False
+
+
+def test_real_sqlite_fuzz_discovers_reachable_fault_occurrence() -> None:
+    corpus = SQLiteTransactionParameterMutations([_fault_case(occurrence=99)])
+    harness = DifferentialHarness(
+        candidate=SQLiteTransactionTarget(enable_faults=True).as_command_target(),
+        oracle=SQLiteTransactionTarget(enable_faults=False).as_command_target(),
+    )
+
+    assert harness.evaluate(corpus(0)).comparison.classification == "match"
+    assert json.loads(corpus(1))["fault"]["occurrence"] == 0
 
     campaign = run_fuzz_campaign(
         cases=corpus,
