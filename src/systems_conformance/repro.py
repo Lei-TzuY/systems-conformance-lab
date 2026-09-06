@@ -40,6 +40,10 @@ def _require_regular_file(path: Path, *, label: str) -> None:
         raise ValueError(f"{label} must be a regular file: {path}")
 
 
+def _reject_json_constant(value: str) -> None:
+    raise ValueError(f"repro manifest contains non-finite JSON constant: {value}")
+
+
 def _load_failure_signature(value: object) -> FailureSignature:
     if not isinstance(value, dict):
         raise TypeError("failure_signature must be an object")
@@ -83,10 +87,10 @@ def load_repro_bundle(
 
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
-    ``input.bin``. Symlinks, oversized artifacts, schema drift, declared
-    input-size mismatches, and present input-content digest mismatches are
-    rejected before execution. Older v1 bundles without a digest remain
-    loadable for replay compatibility.
+    ``input.bin``. Symlinks, oversized artifacts, schema drift, non-standard
+    JSON constants, declared input-size mismatches, and present input-content
+    digest mismatches are rejected before execution. Older v1 bundles without
+    a digest remain loadable for replay compatibility.
     """
 
     if max_input_bytes < 0:
@@ -108,7 +112,10 @@ def load_repro_bundle(
         raise ValueError("repro manifest exceeds max_manifest_bytes")
 
     try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = json.loads(
+            manifest_path.read_text(encoding="utf-8"),
+            parse_constant=_reject_json_constant,
+        )
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("repro manifest is not valid UTF-8 JSON") from exc
 
@@ -183,8 +190,8 @@ def write_repro_bundle(
 
     Existing destinations are rejected so evidence cannot be silently
     overwritten. The manifest deliberately uses relative artifact names and
-    sorted JSON keys, while the original input is retained byte-for-byte and
-    bound to its manifest with a SHA-256 content digest.
+    sorted strict JSON keys, while the original input is retained byte-for-byte
+    and bound to its manifest with a SHA-256 content digest.
     """
 
     destination = Path(destination)
@@ -218,7 +225,14 @@ def write_repro_bundle(
         if replay_context_sha256 is not None:
             manifest["replay_context_sha256"] = replay_context_sha256
         manifest_path.write_text(
-            json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+            json.dumps(
+                manifest,
+                indent=2,
+                sort_keys=True,
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+            + "\n",
             encoding="utf-8",
             newline="\n",
         )
