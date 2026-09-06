@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import signal
 import subprocess
@@ -139,8 +140,8 @@ def run_process(
     """
     if not argv:
         raise ValueError("argv must contain at least one element")
-    if timeout_seconds <= 0:
-        raise ValueError("timeout_seconds must be positive")
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be finite and positive")
     if max_input_bytes < 0:
         raise ValueError("max_input_bytes must be non-negative")
     if len(stdin) > max_input_bytes:
