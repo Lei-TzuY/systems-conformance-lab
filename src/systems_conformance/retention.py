@@ -1,9 +1,8 @@
-import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-from .repro import REPRO_BUNDLE_SCHEMA_VERSION
+from .repro import load_repro_bundle
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,12 +15,13 @@ class RetentionResult:
 
 
 def enforce_repro_retention(root: Path, *, max_bundles: int) -> RetentionResult:
-    """Keep at most ``max_bundles`` valid repro bundles below ``root``.
+    """Keep at most ``max_bundles`` fully validated repro bundles below ``root``.
 
-    Only direct child directories that look like bundles produced by this
-    package are eligible for deletion. Symlinks, malformed directories, and
-    unknown schema versions are ignored. Eligible bundles are ordered newest
-    first by manifest mtime, with directory name as a deterministic tiebreaker.
+    Only direct child directories that pass the canonical bounded repro loader
+    are eligible for deletion. Symlinks, malformed/tampered bundles, unknown
+    schema versions, and any bundle replay would reject are ignored. Eligible
+    bundles are ordered newest first by manifest mtime, with directory name as
+    a deterministic tiebreaker.
     """
 
     if isinstance(max_bundles, bool) or not isinstance(max_bundles, int):
@@ -43,50 +43,13 @@ def enforce_repro_retention(root: Path, *, max_bundles: int) -> RetentionResult:
             ignored.append(child)
             continue
 
-        manifest_path = child / "manifest.json"
-        input_path = child / "input.bin"
-        if (
-            manifest_path.is_symlink()
-            or input_path.is_symlink()
-            or not manifest_path.is_file()
-            or not input_path.is_file()
-        ):
-            ignored.append(child)
-            continue
-
         try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, UnicodeError, json.JSONDecodeError):
+            bundle = load_repro_bundle(child)
+            manifest_mtime_ns = bundle.path.joinpath("manifest.json").stat().st_mtime_ns
+        except (OSError, UnicodeError, TypeError, ValueError):
             ignored.append(child)
             continue
 
-        if not isinstance(manifest, dict):
-            ignored.append(child)
-            continue
-        if manifest.get("schema_version") != REPRO_BUNDLE_SCHEMA_VERSION:
-            ignored.append(child)
-            continue
-        input_record = manifest.get("input")
-        if not isinstance(input_record, dict) or input_record.get("path") != "input.bin":
-            ignored.append(child)
-            continue
-        expected_size = input_record.get("size_bytes")
-        if (
-            isinstance(expected_size, bool)
-            or not isinstance(expected_size, int)
-            or expected_size < 0
-        ):
-            ignored.append(child)
-            continue
-
-        try:
-            if input_path.stat().st_size != expected_size:
-                ignored.append(child)
-                continue
-            manifest_mtime_ns = manifest_path.stat().st_mtime_ns
-        except OSError:
-            ignored.append(child)
-            continue
         eligible.append((manifest_mtime_ns, child.name, child))
 
     eligible.sort(key=lambda item: (-item[0], item[1]))
