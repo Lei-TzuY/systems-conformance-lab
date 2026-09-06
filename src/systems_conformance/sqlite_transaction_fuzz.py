@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal
 
 
 def _reject_json_constant(value: str) -> Any:
@@ -17,6 +17,14 @@ def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ValueError(f"duplicate JSON object field: {key}")
         result[key] = value
     return result
+
+
+def _validate_params(params: Any, *, field: str) -> list[Any]:
+    if not isinstance(params, list):
+        raise TypeError(f"{field} params must be a JSON array")
+    for value in params:
+        _mutation_values(value)
+    return params
 
 
 def _decode_seed(seed: bytes) -> dict[str, Any]:
@@ -37,11 +45,12 @@ def _decode_seed(seed: bytes) -> dict[str, Any]:
     for statement in transaction:
         if not isinstance(statement, dict):
             raise TypeError("transaction statements must be JSON objects")
-        params = statement.get("params", [])
-        if not isinstance(params, list):
-            raise TypeError("transaction statement params must be a JSON array")
-        for value in params:
-            _mutation_values(value)
+        _validate_params(statement.get("params", []), field="transaction statement")
+
+    observe = payload.get("observe")
+    if not isinstance(observe, dict):
+        raise TypeError("observe must be a JSON object")
+    _validate_params(observe.get("params", []), field="observe")
     return payload
 
 
@@ -60,7 +69,7 @@ def _mutation_values(value: Any) -> tuple[Any, ...]:
         return tuple(candidate for candidate in (0.0, 1.0, -1.0) if candidate != value)
     if isinstance(value, str):
         return tuple(candidate for candidate in ("", "0", "x") if candidate != value)
-    raise TypeError("transaction params may only contain JSON scalar values")
+    raise TypeError("SQLite statement params may only contain JSON scalar values")
 
 
 def _encode(payload: dict[str, Any]) -> bytes:
@@ -73,14 +82,50 @@ def _encode(payload: dict[str, Any]) -> bytes:
     ).encode("utf-8")
 
 
+def _append_parameter_mutations(
+    *,
+    payload: dict[str, Any],
+    statement: dict[str, Any],
+    section: Literal["transaction", "observe"],
+    statement_index: int | None,
+    cases: list[bytes],
+    seen: set[bytes],
+    max_case_bytes: int,
+) -> None:
+    params = statement.get("params", [])
+    assert isinstance(params, list)
+    for param_index, value in enumerate(params):
+        for replacement in _mutation_values(value):
+            candidate = dict(payload)
+            candidate_statement = dict(statement)
+            candidate_params = list(params)
+            candidate_params[param_index] = replacement
+            candidate_statement["params"] = candidate_params
+            if section == "transaction":
+                assert statement_index is not None
+                transaction = payload["transaction"]
+                assert isinstance(transaction, list)
+                candidate_transaction = [dict(item) for item in transaction]
+                candidate_transaction[statement_index] = candidate_statement
+                candidate["transaction"] = candidate_transaction
+            else:
+                candidate["observe"] = candidate_statement
+            encoded = _encode(candidate)
+            if len(encoded) > max_case_bytes or encoded in seen:
+                continue
+            cases.append(encoded)
+            seen.add(encoded)
+
+
 class SQLiteTransactionParameterMutations:
     """Finite deterministic corpus for SQLite transaction scalar parameters.
 
     Exact seed bytes are emitted first. Mutations then walk seeds, transaction
-    statements, parameters, and a small type-aware replacement schedule in that
-    order. JSON structure and all non-parameter fields are preserved, so the
-    SQLite worker receives syntactically valid protocol shapes rather than random
-    byte damage. Duplicate and oversized generated cases are skipped.
+    statements and their parameters, followed by observation parameters, using a
+    small type-aware replacement schedule. JSON structure and all non-parameter
+    fields are preserved, so the SQLite worker receives syntactically valid protocol
+    shapes rather than random byte damage. Duplicate and oversized generated cases
+    are skipped.
     """
 
     __slots__ = ("_cases",)
@@ -112,22 +157,27 @@ class SQLiteTransactionParameterMutations:
             assert isinstance(transaction, list)
             for statement_index, statement in enumerate(transaction):
                 assert isinstance(statement, dict)
-                params = statement.get("params", [])
-                assert isinstance(params, list)
-                for param_index, value in enumerate(params):
-                    for replacement in _mutation_values(value):
-                        candidate = dict(payload)
-                        candidate_transaction = [dict(item) for item in transaction]
-                        candidate_statement = candidate_transaction[statement_index]
-                        candidate_params = list(params)
-                        candidate_params[param_index] = replacement
-                        candidate_statement["params"] = candidate_params
-                        candidate["transaction"] = candidate_transaction
-                        encoded = _encode(candidate)
-                        if len(encoded) > max_case_bytes or encoded in seen:
-                            continue
-                        cases.append(encoded)
-                        seen.add(encoded)
+                _append_parameter_mutations(
+                    payload=payload,
+                    statement=statement,
+                    section="transaction",
+                    statement_index=statement_index,
+                    cases=cases,
+                    seen=seen,
+                    max_case_bytes=max_case_bytes,
+                )
+
+            observe = payload["observe"]
+            assert isinstance(observe, dict)
+            _append_parameter_mutations(
+                payload=payload,
+                statement=observe,
+                section="observe",
+                statement_index=None,
+                cases=cases,
+                seen=seen,
+                max_case_bytes=max_case_bytes,
+            )
 
         self._cases = tuple(cases)
 
