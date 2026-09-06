@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Iterable
-from typing import Any
+from typing import Any, Literal
 
 
 def _reject_json_constant(value: str) -> Any:
@@ -82,6 +83,70 @@ def _list_deletions(values: list[Any], *, min_items: int) -> Iterable[list[Any]]
         width //= 2
 
 
+def _scalar_complexity(value: Any) -> int:
+    if value is None:
+        return 0
+    if isinstance(value, bool):
+        return 2 if value else 1
+    if isinstance(value, int):
+        if not -(1 << 63) <= value < (1 << 63):
+            raise ValueError("integer params must fit signed 64-bit SQLite range")
+        return 3 + min(abs(value), 1_000_000)
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("floating params must be finite")
+        return 1_000_004 + min(int(abs(value) * 1_000), 1_000_000)
+    if isinstance(value, str):
+        return 2_000_005 + len(value.encode("utf-8"))
+    raise TypeError("SQLite statement params may only contain JSON scalar values")
+
+
+def _simpler_scalars(value: Any) -> tuple[Any, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, bool):
+        return (False, None) if value else (None,)
+    if isinstance(value, int):
+        _scalar_complexity(value)
+        boundary = -1 if value < 0 else 1
+        values = (0, boundary, None) if abs(value) > 1 else (0, None)
+        return tuple(candidate for candidate in values if candidate != value)
+    if isinstance(value, float):
+        _scalar_complexity(value)
+        boundary = -1.0 if value < 0 else 1.0
+        values = (0.0, boundary, None) if abs(value) > 1.0 else (0.0, None)
+        return tuple(candidate for candidate in values if candidate != value)
+    if isinstance(value, str):
+        values = ("", "0", None) if len(value) > 1 else ("", None)
+        return tuple(candidate for candidate in values if candidate != value)
+    raise TypeError("SQLite statement params may only contain JSON scalar values")
+
+
+def _parameter_sections(
+    payload: dict[str, Any],
+) -> Iterable[tuple[Literal["transaction", "observe"], int | None, dict[str, Any]]]:
+    transaction = payload["transaction"]
+    assert isinstance(transaction, list)
+    for statement_index, statement in enumerate(transaction):
+        if not isinstance(statement, dict):
+            raise TypeError("transaction statements must be JSON objects")
+        yield "transaction", statement_index, statement
+
+    observe = payload.get("observe")
+    if not isinstance(observe, dict):
+        raise TypeError("observe must be a JSON object")
+    yield "observe", None, observe
+
+
+def _statement_params(statement: dict[str, Any], *, field: str) -> list[Any]:
+    params = statement.get("params", [])
+    if not isinstance(params, list):
+        raise TypeError(f"{field} params must be a JSON array")
+    for value in params:
+        _scalar_complexity(value)
+    return params
+
+
 def sqlite_transaction_statement_count(case: bytes) -> int:
     """Return the reducible setup + transaction statement count for one case."""
     payload = _decode_case(case)
@@ -117,3 +182,49 @@ def sqlite_transaction_statement_deletions(case: bytes) -> Iterable[bytes]:
         candidate = dict(payload)
         candidate["setup"] = reduced_setup
         yield _encode(candidate)
+
+
+def sqlite_transaction_parameter_complexity(case: bytes) -> int:
+    """Return deterministic scalar complexity across transaction and observe params."""
+    payload = _decode_case(case)
+    complexity = 0
+    for section, _, statement in _parameter_sections(payload):
+        params = _statement_params(statement, field=section)
+        complexity += sum(_scalar_complexity(value) for value in params)
+    return complexity
+
+
+def sqlite_transaction_parameter_reductions(case: bytes) -> Iterable[bytes]:
+    """Yield deterministic scalar simplifications while preserving request shape.
+
+    Transaction parameters are considered before observation parameters. Only one
+    scalar is changed per candidate, and unrelated statements, SQL text, faults, and
+    request fields are preserved. Candidate validity remains observable through the
+    real target and failure-preservation predicate.
+    """
+    payload = _decode_case(case)
+    current_complexity = sqlite_transaction_parameter_complexity(case)
+
+    for section, statement_index, statement in _parameter_sections(payload):
+        params = _statement_params(statement, field=section)
+        for param_index, value in enumerate(params):
+            for replacement in _simpler_scalars(value):
+                candidate = dict(payload)
+                candidate_statement = dict(statement)
+                candidate_params = list(params)
+                candidate_params[param_index] = replacement
+                candidate_statement["params"] = candidate_params
+
+                if section == "transaction":
+                    assert statement_index is not None
+                    transaction = payload["transaction"]
+                    assert isinstance(transaction, list)
+                    candidate_transaction = list(transaction)
+                    candidate_transaction[statement_index] = candidate_statement
+                    candidate["transaction"] = candidate_transaction
+                else:
+                    candidate["observe"] = candidate_statement
+
+                encoded = _encode(candidate)
+                if sqlite_transaction_parameter_complexity(encoded) < current_complexity:
+                    yield encoded
