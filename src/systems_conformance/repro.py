@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .comparator import COMPARISON_SCHEMA_VERSION, ComparisonResult
-from .failure import FAILURE_SIGNATURE_SCHEMA_VERSION, FailureSignature
-from .model import SCHEMA_VERSION, ExecutionResult
+from .comparator import COMPARISON_SCHEMA_VERSION, ComparisonResult, compare_results
+from .failure import FAILURE_SIGNATURE_SCHEMA_VERSION, FailureSignature, failure_signature
+from .model import SCHEMA_VERSION, ExecutionResult, StreamCapture
 
 REPRO_BUNDLE_SCHEMA_VERSION = "systems-conformance.repro-bundle.v1"
 DEFAULT_MAX_REPRO_INPUT_BYTES = 16 * 1024 * 1024
@@ -121,7 +121,30 @@ def _validate_input_fields(input_record: dict[str, object]) -> None:
     )
 
 
-def _validate_execution_record(value: object, *, label: str) -> None:
+def _load_stream_capture(value: object, *, label: str) -> StreamCapture:
+    if not isinstance(value, dict):
+        raise TypeError(f"repro {label} capture must be an object")
+    _validate_fields(
+        value,
+        required=_REQUIRED_STREAM_CAPTURE_FIELDS,
+        optional=frozenset(),
+        label=f"repro {label} capture",
+    )
+    text = value.get("text")
+    total_bytes = value.get("total_bytes")
+    truncated = value.get("truncated")
+    if not isinstance(text, str):
+        raise TypeError(f"repro {label} text must be a string")
+    if not isinstance(total_bytes, int) or isinstance(total_bytes, bool):
+        raise TypeError(f"repro {label} total_bytes must be an integer")
+    if total_bytes < 0:
+        raise ValueError(f"repro {label} total_bytes must be non-negative")
+    if not isinstance(truncated, bool):
+        raise TypeError(f"repro {label} truncated must be a boolean")
+    return StreamCapture(text=text, total_bytes=total_bytes, truncated=truncated)
+
+
+def _load_execution_record(value: object, *, label: str) -> ExecutionResult:
     if not isinstance(value, dict):
         raise TypeError(f"repro {label} record must be an object")
     _validate_fields(
@@ -132,19 +155,42 @@ def _validate_execution_record(value: object, *, label: str) -> None:
     )
     if value.get("schema_version") != SCHEMA_VERSION:
         raise ValueError(f"unsupported repro {label} execution schema")
-    for stream_name in ("stdout", "stderr"):
-        stream = value.get(stream_name)
-        if not isinstance(stream, dict):
-            raise TypeError(f"repro {label} {stream_name} capture must be an object")
-        _validate_fields(
-            stream,
-            required=_REQUIRED_STREAM_CAPTURE_FIELDS,
-            optional=frozenset(),
-            label=f"repro {label} {stream_name} capture",
-        )
+
+    argv = value.get("argv")
+    duration_ms = value.get("duration_ms")
+    timed_out = value.get("timed_out")
+    exit_code = value.get("exit_code")
+    signal = value.get("signal")
+    infrastructure_error = value.get("infrastructure_error")
+    if not isinstance(argv, list) or not all(isinstance(item, str) for item in argv):
+        raise TypeError(f"repro {label} argv must be a list of strings")
+    if not isinstance(duration_ms, int) or isinstance(duration_ms, bool):
+        raise TypeError(f"repro {label} duration_ms must be an integer")
+    if duration_ms < 0:
+        raise ValueError(f"repro {label} duration_ms must be non-negative")
+    if not isinstance(timed_out, bool):
+        raise TypeError(f"repro {label} timed_out must be a boolean")
+    for field_name, field_value in (("exit_code", exit_code), ("signal", signal)):
+        if field_value is not None and (
+            not isinstance(field_value, int) or isinstance(field_value, bool)
+        ):
+            raise TypeError(f"repro {label} {field_name} must be an integer or null")
+    if infrastructure_error is not None and not isinstance(infrastructure_error, str):
+        raise TypeError(f"repro {label} infrastructure_error must be a string or null")
+
+    return ExecutionResult(
+        argv=tuple(argv),
+        duration_ms=duration_ms,
+        timed_out=timed_out,
+        exit_code=exit_code,
+        signal=signal,
+        stdout=_load_stream_capture(value.get("stdout"), label=f"{label} stdout"),
+        stderr=_load_stream_capture(value.get("stderr"), label=f"{label} stderr"),
+        infrastructure_error=infrastructure_error,
+    )
 
 
-def _validate_comparison_record(value: object) -> None:
+def _load_comparison_record(value: object) -> ComparisonResult:
     if not isinstance(value, dict):
         raise TypeError("repro comparison record must be an object")
     _validate_fields(
@@ -155,6 +201,34 @@ def _validate_comparison_record(value: object) -> None:
     )
     if value.get("schema_version") != COMPARISON_SCHEMA_VERSION:
         raise ValueError("unsupported repro comparison schema")
+
+    equivalent = value.get("equivalent")
+    classification = value.get("classification")
+    mismatches = value.get("mismatches")
+    candidate_error = value.get("candidate_infrastructure_error")
+    oracle_error = value.get("oracle_infrastructure_error")
+    if not isinstance(equivalent, bool):
+        raise TypeError("repro comparison equivalent must be a boolean")
+    if classification not in {"match", "product_mismatch", "infrastructure_failure"}:
+        raise ValueError("invalid repro comparison classification")
+    if not isinstance(mismatches, list) or not all(
+        isinstance(item, str) for item in mismatches
+    ):
+        raise TypeError("repro comparison mismatches must be a list of strings")
+    for label, error in (
+        ("candidate_infrastructure_error", candidate_error),
+        ("oracle_infrastructure_error", oracle_error),
+    ):
+        if error is not None and not isinstance(error, str):
+            raise TypeError(f"repro comparison {label} must be a string or null")
+
+    return ComparisonResult(
+        equivalent=equivalent,
+        classification=classification,
+        mismatches=tuple(mismatches),
+        candidate_infrastructure_error=candidate_error,
+        oracle_infrastructure_error=oracle_error,
+    )
 
 
 def _load_failure_signature(value: object) -> FailureSignature:
@@ -207,12 +281,12 @@ def load_repro_bundle(
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
     ``input.bin``. Symlinks, unexpected direct children, unexpected or missing
-    top-level, input-record, execution-record, stream-capture, comparison-record,
-    and failure-signature fields, oversized artifacts, schema drift, non-standard
-    JSON constants, declared input-size mismatches, and present input-content
-    digest mismatches are rejected before execution. Older v1 bundles without an
-    input digest or replay-context fingerprint remain loadable for replay
-    compatibility.
+    nested fields, malformed typed values, semantic disagreement between stored
+    execution/comparison/failure evidence, oversized artifacts, schema drift,
+    non-standard JSON constants, declared input-size mismatches, and present
+    input-content digest mismatches are rejected before execution. Older v1
+    bundles without an input digest or replay-context fingerprint remain loadable
+    for replay compatibility.
     """
 
     if max_input_bytes < 0:
@@ -291,9 +365,17 @@ def load_repro_bundle(
     ):
         raise ValueError("repro input SHA-256 does not match manifest metadata")
 
-    _validate_execution_record(manifest.get("candidate"), label="candidate")
-    _validate_execution_record(manifest.get("oracle"), label="oracle")
-    _validate_comparison_record(manifest.get("comparison"))
+    candidate = _load_execution_record(manifest.get("candidate"), label="candidate")
+    oracle = _load_execution_record(manifest.get("oracle"), label="oracle")
+    stored_comparison = _load_comparison_record(manifest.get("comparison"))
+    expected_comparison = compare_results(candidate, oracle)
+    if stored_comparison != expected_comparison:
+        raise ValueError("repro comparison does not match candidate/oracle execution evidence")
+
+    signature = _load_failure_signature(manifest.get("failure_signature"))
+    expected_signature = failure_signature(expected_comparison)
+    if signature != expected_signature:
+        raise ValueError("repro failure signature does not match comparison evidence")
 
     metadata = manifest.get("metadata")
     if not isinstance(metadata, dict):
@@ -302,7 +384,7 @@ def load_repro_bundle(
     return LoadedReproBundle(
         path=path,
         input_bytes=input_bytes,
-        signature=_load_failure_signature(manifest.get("failure_signature")),
+        signature=signature,
         metadata=metadata,
         replay_context_sha256=_load_replay_context_sha256(
             manifest.get("replay_context_sha256")
@@ -372,7 +454,6 @@ def write_repro_bundle(
             newline="\n",
         )
     except BaseException:
-        # Avoid leaving a partially valid-looking bundle behind.
         if manifest_path.exists():
             manifest_path.unlink()
         if input_path.exists():
