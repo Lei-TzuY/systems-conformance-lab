@@ -62,9 +62,9 @@ class CommandTarget:
         input_bytes: bytes,
         *,
         timeout_seconds: float,
-        max_input_bytes: int,
         max_output_bytes: int,
         max_total_output_bytes: int,
+        max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
     ) -> ExecutionResult:
         """Execute this target through the shared safe process runner."""
         process_env = None if self.env is None else dict(self.env)
