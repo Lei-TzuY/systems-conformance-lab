@@ -11,6 +11,7 @@ from typing import BinaryIO
 
 from .model import ExecutionResult, StreamCapture
 
+DEFAULT_MAX_INPUT_BYTES = 16 * 1024 * 1024
 DEFAULT_MAX_OUTPUT_BYTES = 1024 * 1024
 DEFAULT_MAX_TOTAL_OUTPUT_BYTES = 16 * 1024 * 1024
 _READ_CHUNK_BYTES = 64 * 1024
@@ -120,13 +121,15 @@ def run_process(
     cwd: str | os.PathLike[str] | None = None,
     env: Mapping[str, str] | None = None,
     timeout_seconds: float = 10.0,
+    max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
     max_output_bytes: int = DEFAULT_MAX_OUTPUT_BYTES,
     max_total_output_bytes: int = DEFAULT_MAX_TOTAL_OUTPUT_BYTES,
 ) -> ExecutionResult:
     """Run one untrusted target without a command shell and return a structured record.
 
-    Stdout and stderr are drained concurrently so a target cannot deadlock by filling a pipe.
-    Only ``max_output_bytes`` from each stream are retained in memory. A separate aggregate
+    Input is rejected before process launch when it exceeds ``max_input_bytes``. Stdout and
+    stderr are drained concurrently so a target cannot deadlock by filling a pipe. Only
+    ``max_output_bytes`` from each stream are retained in memory. A separate aggregate
     ``max_total_output_bytes`` budget bounds how much output the untrusted process may emit at
     all; exceeding it terminates the process tree and is classified as an infrastructure error.
     Descendants that keep inherited stdio pipes open after the root exits are also bounded and
@@ -136,6 +139,10 @@ def run_process(
         raise ValueError("argv must contain at least one element")
     if timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be positive")
+    if max_input_bytes < 0:
+        raise ValueError("max_input_bytes must be non-negative")
+    if len(stdin) > max_input_bytes:
+        raise ValueError(f"stdin exceeds max_input_bytes ({len(stdin)} > {max_input_bytes})")
     if max_output_bytes < 0:
         raise ValueError("max_output_bytes must be non-negative")
     if max_total_output_bytes <= 0:
