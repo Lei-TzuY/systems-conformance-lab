@@ -26,6 +26,8 @@ from .sqlite_adapter import SQLiteQueryTarget
 from .sqlite_transaction_adapter import SQLiteTransactionTarget
 from .sqlite_transaction_fuzz import SQLiteTransactionParameterMutations
 from .sqlite_transaction_reducer import (
+    sqlite_transaction_parameter_complexity,
+    sqlite_transaction_parameter_reductions,
     sqlite_transaction_statement_count,
     sqlite_transaction_statement_deletions,
 )
@@ -71,6 +73,8 @@ __all__ = [
     "run_feedback_guided_campaign",
     "run_fuzz_campaign",
     "run_process",
+    "sqlite_transaction_parameter_complexity",
+    "sqlite_transaction_parameter_reductions",
     "sqlite_transaction_statement_count",
     "sqlite_transaction_statement_deletions",
     "write_repro_bundle",
