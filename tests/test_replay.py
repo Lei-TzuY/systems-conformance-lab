@@ -96,6 +96,35 @@ def test_loader_rejects_manifest_input_path_escape_before_execution(tmp_path) ->
         load_repro_bundle(bundle.path)
 
 
+def test_loader_rejects_unexpected_direct_child(tmp_path) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    bundle = harness.write_repro(tmp_path / "repro", input_bytes=b"BUG")
+    (bundle.path / "notes.txt").write_text("not part of v1", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="members do not match v1 layout") as exc_info:
+        load_repro_bundle(bundle.path)
+
+    assert "notes.txt" in str(exc_info.value)
+
+
+def test_replay_rejects_unexpected_member_before_real_target_execution(tmp_path) -> None:
+    marker = tmp_path / "executed"
+    marker_script = (
+        f"from pathlib import Path; Path({str(marker)!r}).write_text('ran'); "
+        + BUGGY_SCRIPT
+    )
+    harness = DifferentialHarness(candidate=target(marker_script), oracle=target(ECHO_SCRIPT))
+    bundle = harness.write_repro(tmp_path / "repro", input_bytes=b"BUG")
+    assert marker.exists()
+    marker.unlink()
+    (bundle.path / "unexpected.bin").write_bytes(b"extra")
+
+    with pytest.raises(ValueError, match="members do not match v1 layout"):
+        harness.replay_repro(bundle.path)
+
+    assert not marker.exists()
+
+
 def test_loader_enforces_input_budget_from_manifest(tmp_path) -> None:
     harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
     bundle = harness.write_repro(tmp_path / "repro", input_bytes=b"BUG")
