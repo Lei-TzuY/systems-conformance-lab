@@ -24,6 +24,8 @@ _REQUIRED_MANIFEST_FIELDS = frozenset(
     }
 )
 _OPTIONAL_MANIFEST_FIELDS = frozenset({"replay_context_sha256"})
+_REQUIRED_INPUT_FIELDS = frozenset({"path", "size_bytes"})
+_OPTIONAL_INPUT_FIELDS = frozenset({"sha256"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,17 +59,41 @@ def _reject_json_constant(value: str) -> None:
     raise ValueError(f"repro manifest contains non-finite JSON constant: {value}")
 
 
-def _validate_manifest_fields(manifest: dict[str, object]) -> None:
-    fields = frozenset(manifest)
-    unexpected = sorted(fields - _REQUIRED_MANIFEST_FIELDS - _OPTIONAL_MANIFEST_FIELDS)
-    missing = sorted(_REQUIRED_MANIFEST_FIELDS - fields)
+def _validate_fields(
+    value: dict[str, object],
+    *,
+    required: frozenset[str],
+    optional: frozenset[str],
+    label: str,
+) -> None:
+    fields = frozenset(value)
+    unexpected = sorted(fields - required - optional)
+    missing = sorted(required - fields)
     if unexpected or missing:
         details = []
         if unexpected:
             details.append(f"unexpected={unexpected!r}")
         if missing:
             details.append(f"missing={missing!r}")
-        raise ValueError(f"repro manifest fields do not match v1 schema: {', '.join(details)}")
+        raise ValueError(f"{label} fields do not match v1 schema: {', '.join(details)}")
+
+
+def _validate_manifest_fields(manifest: dict[str, object]) -> None:
+    _validate_fields(
+        manifest,
+        required=_REQUIRED_MANIFEST_FIELDS,
+        optional=_OPTIONAL_MANIFEST_FIELDS,
+        label="repro manifest",
+    )
+
+
+def _validate_input_fields(input_record: dict[str, object]) -> None:
+    _validate_fields(
+        input_record,
+        required=_REQUIRED_INPUT_FIELDS,
+        optional=_OPTIONAL_INPUT_FIELDS,
+        label="repro input metadata",
+    )
 
 
 def _load_failure_signature(value: object) -> FailureSignature:
@@ -114,10 +140,11 @@ def load_repro_bundle(
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
     ``input.bin``. Symlinks, unexpected direct children, unexpected or missing
-    manifest fields, oversized artifacts, schema drift, non-standard JSON
-    constants, declared input-size mismatches, and present input-content digest
-    mismatches are rejected before execution. Older v1 bundles without an input
-    digest or replay-context fingerprint remain loadable for replay compatibility.
+    top-level and input-record fields, oversized artifacts, schema drift,
+    non-standard JSON constants, declared input-size mismatches, and present
+    input-content digest mismatches are rejected before execution. Older v1
+    bundles without an input digest or replay-context fingerprint remain
+    loadable for replay compatibility.
     """
 
     if max_input_bytes < 0:
@@ -166,6 +193,7 @@ def load_repro_bundle(
     input_record = manifest.get("input")
     if not isinstance(input_record, dict):
         raise TypeError("repro input metadata must be an object")
+    _validate_input_fields(input_record)
     if input_record.get("path") != "input.bin":
         raise ValueError("repro input path must be the direct child input.bin")
 

@@ -120,6 +120,40 @@ def test_loader_rejects_unexpected_manifest_field(tmp_path) -> None:
     assert "future_semantics" in str(exc_info.value)
 
 
+def test_loader_rejects_unexpected_input_record_field(tmp_path) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    bundle = harness.write_repro(tmp_path / "repro", input_bytes=b"BUG")
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    manifest["input"]["compression"] = "none"
+    bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="input metadata fields do not match v1 schema") as exc_info:
+        load_repro_bundle(bundle.path)
+
+    assert "compression" in str(exc_info.value)
+
+
+def test_replay_rejects_input_record_schema_drift_before_real_target_execution(tmp_path) -> None:
+    marker = tmp_path / "executed"
+    marker_script = (
+        f"from pathlib import Path; Path({str(marker)!r}).write_text('ran'); "
+        + BUGGY_SCRIPT
+    )
+    harness = DifferentialHarness(candidate=target(marker_script), oracle=target(ECHO_SCRIPT))
+    bundle = harness.write_repro(tmp_path / "repro", input_bytes=b"BUG")
+    assert marker.exists()
+    marker.unlink()
+
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    manifest["input"]["future_digest"] = "must-not-run"
+    bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="input metadata fields do not match v1 schema"):
+        harness.replay_repro(bundle.path)
+
+    assert not marker.exists()
+
+
 def test_replay_rejects_manifest_schema_drift_before_real_target_execution(tmp_path) -> None:
     marker = tmp_path / "executed"
     marker_script = (
