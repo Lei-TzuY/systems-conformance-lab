@@ -26,6 +26,7 @@ _REQUIRED_MANIFEST_FIELDS = frozenset(
 _OPTIONAL_MANIFEST_FIELDS = frozenset({"replay_context_sha256"})
 _REQUIRED_INPUT_FIELDS = frozenset({"path", "size_bytes"})
 _OPTIONAL_INPUT_FIELDS = frozenset({"sha256"})
+_REQUIRED_FAILURE_SIGNATURE_FIELDS = frozenset({"schema_version", "kind", "dimensions"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,6 +100,12 @@ def _validate_input_fields(input_record: dict[str, object]) -> None:
 def _load_failure_signature(value: object) -> FailureSignature:
     if not isinstance(value, dict):
         raise TypeError("failure_signature must be an object")
+    _validate_fields(
+        value,
+        required=_REQUIRED_FAILURE_SIGNATURE_FIELDS,
+        optional=frozenset(),
+        label="repro failure signature",
+    )
     if value.get("schema_version") != FAILURE_SIGNATURE_SCHEMA_VERSION:
         raise ValueError("unsupported failure signature schema")
 
@@ -140,10 +147,10 @@ def load_repro_bundle(
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
     ``input.bin``. Symlinks, unexpected direct children, unexpected or missing
-    top-level and input-record fields, oversized artifacts, schema drift,
-    non-standard JSON constants, declared input-size mismatches, and present
-    input-content digest mismatches are rejected before execution. Older v1
-    bundles without an input digest or replay-context fingerprint remain
+    top-level, input-record, and failure-signature fields, oversized artifacts,
+    schema drift, non-standard JSON constants, declared input-size mismatches,
+    and present input-content digest mismatches are rejected before execution.
+    Older v1 bundles without an input digest or replay-context fingerprint remain
     loadable for replay compatibility.
     """
 
