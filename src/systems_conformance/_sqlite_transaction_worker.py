@@ -71,6 +71,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     persistence.add_argument("--reopen-before-observe", action="store_true")
     persistence.add_argument("--same-connection-observe", action="store_true")
     parser.add_argument("--max-statements", required=True, type=_positive_int)
+    parser.add_argument("--max-sql-bytes", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
     return parser.parse_args(argv)
 
@@ -106,14 +107,20 @@ def _validate_params(params: Any) -> list[Any]:
     return params
 
 
-def _decode_statement(value: Any, *, field: str) -> _Statement:
+def _validate_sql(sql: Any, *, field: str, max_sql_bytes: int) -> str:
+    if not isinstance(sql, str) or not sql.strip():
+        raise ProtocolError(f"{field} statement sql must be a non-empty string")
+    if len(sql.encode("utf-8")) > max_sql_bytes:
+        raise ProtocolError(f"{field} statement sql exceeds max_sql_bytes: {max_sql_bytes}")
+    return sql
+
+
+def _decode_statement(value: Any, *, field: str, max_sql_bytes: int) -> _Statement:
     if not isinstance(value, dict):
         raise ProtocolError(f"{field} statement must be an object")
     if set(value) - {"sql", "params"}:
         raise ProtocolError(f"{field} statement contains unknown fields")
-    sql = value.get("sql")
-    if not isinstance(sql, str) or not sql.strip():
-        raise ProtocolError(f"{field} statement sql must be a non-empty string")
+    sql = _validate_sql(value.get("sql"), field=field, max_sql_bytes=max_sql_bytes)
     params = _validate_params(value.get("params", []))
     return _Statement(sql=sql, params=params)
 
@@ -141,7 +148,7 @@ def _decode_fault(value: Any) -> FaultSpec | None:
 
 
 def _decode_request(
-    raw: bytes, *, max_statements: int
+    raw: bytes, *, max_statements: int, max_sql_bytes: int
 ) -> tuple[list[str], list[_Statement], _Statement, FaultSpec | None]:
     try:
         payload = json.loads(
@@ -162,15 +169,21 @@ def _decode_request(
     fault = _decode_fault(payload.get("fault"))
     if not isinstance(setup, list) or not all(isinstance(item, str) for item in setup):
         raise ProtocolError("setup must be a list of SQL strings")
+    validated_setup = [
+        _validate_sql(item, field="setup", max_sql_bytes=max_sql_bytes) for item in setup
+    ]
     if not isinstance(transaction, list) or not transaction:
         raise ProtocolError("transaction must be a non-empty list of statement objects")
     decoded_transaction = [
-        _decode_statement(item, field="transaction") for item in transaction
+        _decode_statement(item, field="transaction", max_sql_bytes=max_sql_bytes)
+        for item in transaction
     ]
-    decoded_observe = _decode_statement(observe, field="observe")
-    if len(setup) + len(decoded_transaction) + 1 > max_statements:
+    decoded_observe = _decode_statement(
+        observe, field="observe", max_sql_bytes=max_sql_bytes
+    )
+    if len(validated_setup) + len(decoded_transaction) + 1 > max_statements:
         raise ProtocolError(f"request exceeds max_statements: {max_statements}")
-    return setup, decoded_transaction, decoded_observe, fault
+    return validated_setup, decoded_transaction, decoded_observe, fault
 
 
 def _authorizer(
@@ -239,10 +252,13 @@ def _run(
     enable_faults: bool,
     reopen_before_observe: bool,
     max_statements: int,
+    max_sql_bytes: int,
     max_vm_steps: int | None,
 ) -> bytes:
     setup, transaction, observe, fault = _decode_request(
-        raw, max_statements=max_statements
+        raw,
+        max_statements=max_statements,
+        max_sql_bytes=max_sql_bytes,
     )
     controller = FaultController(fault) if enable_faults and fault is not None else None
     budget = _VmBudget(max_vm_steps) if max_vm_steps is not None else None
@@ -313,6 +329,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             enable_faults=args.enable_faults,
             reopen_before_observe=args.reopen_before_observe,
             max_statements=args.max_statements,
+            max_sql_bytes=args.max_sql_bytes,
             max_vm_steps=args.max_vm_steps,
         )
     except ProtocolError as exc:
