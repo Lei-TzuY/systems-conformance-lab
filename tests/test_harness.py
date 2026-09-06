@@ -1,3 +1,4 @@
+import json
 import math
 import sys
 
@@ -162,6 +163,29 @@ def test_harness_rejects_non_finite_timeout_before_real_target_launch(
             oracle=command,
             timeout_seconds=timeout_seconds,
         )
+    assert not marker.exists()
+
+
+def test_replay_rejects_non_standard_json_before_real_target_launch(tmp_path) -> None:
+    source = DifferentialHarness(candidate=target(UPPER_SCRIPT), oracle=target(ECHO_SCRIPT))
+    bundle = source.write_repro(tmp_path / "case", input_bytes=b"mixed Case")
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    manifest["metadata"] = {"score": math.nan}
+    bundle.manifest_path.write_text(
+        json.dumps(manifest, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    marker = tmp_path / "launched.txt"
+    marker_script = (
+        "from pathlib import Path; import sys; "
+        "Path(sys.argv[1]).write_text('launched'); sys.stdin.buffer.read()"
+    )
+    command = CommandTarget((sys.executable, "-c", marker_script, str(marker)))
+    replay = DifferentialHarness(candidate=command, oracle=command)
+
+    with pytest.raises(ValueError, match="non-finite JSON constant"):
+        replay.replay_repro(bundle.path, require_same_context=False)
     assert not marker.exists()
 
 
