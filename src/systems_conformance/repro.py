@@ -6,7 +6,7 @@ from typing import Any
 
 from .comparator import ComparisonResult
 from .failure import FAILURE_SIGNATURE_SCHEMA_VERSION, FailureSignature
-from .model import ExecutionResult
+from .model import SCHEMA_VERSION, ExecutionResult
 
 REPRO_BUNDLE_SCHEMA_VERSION = "systems-conformance.repro-bundle.v1"
 DEFAULT_MAX_REPRO_INPUT_BYTES = 16 * 1024 * 1024
@@ -27,6 +27,20 @@ _OPTIONAL_MANIFEST_FIELDS = frozenset({"replay_context_sha256"})
 _REQUIRED_INPUT_FIELDS = frozenset({"path", "size_bytes"})
 _OPTIONAL_INPUT_FIELDS = frozenset({"sha256"})
 _REQUIRED_FAILURE_SIGNATURE_FIELDS = frozenset({"schema_version", "kind", "dimensions"})
+_REQUIRED_EXECUTION_FIELDS = frozenset(
+    {
+        "argv",
+        "duration_ms",
+        "timed_out",
+        "exit_code",
+        "signal",
+        "stdout",
+        "stderr",
+        "infrastructure_error",
+        "schema_version",
+    }
+)
+_REQUIRED_STREAM_CAPTURE_FIELDS = frozenset({"text", "total_bytes", "truncated"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +111,29 @@ def _validate_input_fields(input_record: dict[str, object]) -> None:
     )
 
 
+def _validate_execution_record(value: object, *, label: str) -> None:
+    if not isinstance(value, dict):
+        raise TypeError(f"repro {label} record must be an object")
+    _validate_fields(
+        value,
+        required=_REQUIRED_EXECUTION_FIELDS,
+        optional=frozenset(),
+        label=f"repro {label} execution record",
+    )
+    if value.get("schema_version") != SCHEMA_VERSION:
+        raise ValueError(f"unsupported repro {label} execution schema")
+    for stream_name in ("stdout", "stderr"):
+        stream = value.get(stream_name)
+        if not isinstance(stream, dict):
+            raise TypeError(f"repro {label} {stream_name} capture must be an object")
+        _validate_fields(
+            stream,
+            required=_REQUIRED_STREAM_CAPTURE_FIELDS,
+            optional=frozenset(),
+            label=f"repro {label} {stream_name} capture",
+        )
+
+
 def _load_failure_signature(value: object) -> FailureSignature:
     if not isinstance(value, dict):
         raise TypeError("failure_signature must be an object")
@@ -147,11 +184,12 @@ def load_repro_bundle(
     Replay accepts only the deterministic v1 layout emitted by
     :func:`write_repro_bundle`: one direct-child ``manifest.json`` and
     ``input.bin``. Symlinks, unexpected direct children, unexpected or missing
-    top-level, input-record, and failure-signature fields, oversized artifacts,
-    schema drift, non-standard JSON constants, declared input-size mismatches,
-    and present input-content digest mismatches are rejected before execution.
-    Older v1 bundles without an input digest or replay-context fingerprint remain
-    loadable for replay compatibility.
+    top-level, input-record, execution-record, stream-capture, and
+    failure-signature fields, oversized artifacts, schema drift, non-standard
+    JSON constants, declared input-size mismatches, and present input-content
+    digest mismatches are rejected before execution. Older v1 bundles without an
+    input digest or replay-context fingerprint remain loadable for replay
+    compatibility.
     """
 
     if max_input_bytes < 0:
@@ -230,9 +268,10 @@ def load_repro_bundle(
     ):
         raise ValueError("repro input SHA-256 does not match manifest metadata")
 
-    for field in ("candidate", "oracle", "comparison"):
-        if not isinstance(manifest.get(field), dict):
-            raise TypeError(f"repro {field} record must be an object")
+    _validate_execution_record(manifest.get("candidate"), label="candidate")
+    _validate_execution_record(manifest.get("oracle"), label="oracle")
+    if not isinstance(manifest.get("comparison"), dict):
+        raise TypeError("repro comparison record must be an object")
 
     metadata = manifest.get("metadata")
     if not isinstance(metadata, dict):
