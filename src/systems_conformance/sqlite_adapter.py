@@ -8,6 +8,7 @@ from .harness import CommandTarget
 DEFAULT_MAX_JSON_DEPTH = 32
 DEFAULT_MAX_SETUP_STATEMENTS = 256
 DEFAULT_MAX_PARAMS = 999
+DEFAULT_MAX_PARAM_VALUE_BYTES = 1024 * 1024
 DEFAULT_MAX_RESULT_COLUMNS = 256
 DEFAULT_MAX_RESULT_ROWS = 10_000
 DEFAULT_MAX_RESULT_VALUE_BYTES = 1024 * 1024
@@ -24,13 +25,13 @@ class SQLiteQueryTarget:
     shared runner's timeout and output limits. ``max_json_depth`` bounds structural JSON
     nesting before Python decoding, ``max_sql_bytes`` bounds every setup/query SQL string
     before SQLite opens the case, ``max_setup_statements`` bounds setup-list cardinality
-    before any setup statement executes, ``max_params`` bounds query bind cardinality
-    before SQLite execution, ``max_result_columns`` bounds result width before row
-    materialization, ``max_result_rows`` bounds result cardinality,
-    ``max_result_value_bytes`` bounds each TEXT/BLOB before JSON/hex expansion,
-    ``max_result_bytes`` bounds cumulative normalized row JSON bytes before full-result
-    serialization, and ``max_vm_steps`` optionally adds a deterministic SQLite
-    progress-handler budget below the wall-clock timeout.
+    before any setup statement executes, ``max_params`` bounds query bind cardinality,
+    ``max_param_value_bytes`` bounds each UTF-8 string bind before SQLite execution,
+    ``max_result_columns`` bounds result width before row materialization,
+    ``max_result_rows`` bounds result cardinality, ``max_result_value_bytes`` bounds each
+    TEXT/BLOB before JSON/hex expansion, ``max_result_bytes`` bounds cumulative normalized
+    row JSON bytes before full-result serialization, and ``max_vm_steps`` optionally adds
+    a deterministic SQLite progress-handler budget below the wall-clock timeout.
     """
 
     foreign_keys: bool = True
@@ -39,6 +40,7 @@ class SQLiteQueryTarget:
     max_json_depth: int = DEFAULT_MAX_JSON_DEPTH
     max_setup_statements: int = DEFAULT_MAX_SETUP_STATEMENTS
     max_params: int = DEFAULT_MAX_PARAMS
+    max_param_value_bytes: int = DEFAULT_MAX_PARAM_VALUE_BYTES
     max_result_columns: int = DEFAULT_MAX_RESULT_COLUMNS
     max_result_rows: int = DEFAULT_MAX_RESULT_ROWS
     max_result_value_bytes: int = DEFAULT_MAX_RESULT_VALUE_BYTES
@@ -51,6 +53,7 @@ class SQLiteQueryTarget:
             ("max_json_depth", self.max_json_depth),
             ("max_setup_statements", self.max_setup_statements),
             ("max_params", self.max_params),
+            ("max_param_value_bytes", self.max_param_value_bytes),
             ("max_result_columns", self.max_result_columns),
             ("max_result_rows", self.max_result_rows),
             ("max_result_value_bytes", self.max_result_value_bytes),
@@ -79,6 +82,8 @@ class SQLiteQueryTarget:
             str(self.max_result_bytes),
             "--max-params",
             str(self.max_params),
+            "--max-param-value-bytes",
+            str(self.max_param_value_bytes),
             "--foreign-keys" if self.foreign_keys else "--no-foreign-keys",
             "--enable-faults" if self.enable_faults else "--disable-faults",
             "--max-sql-bytes",
