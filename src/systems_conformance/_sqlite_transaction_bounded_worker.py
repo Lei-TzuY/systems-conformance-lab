@@ -13,13 +13,7 @@ _ORIGINAL_EXECUTE_STATEMENT = worker._execute_statement
 
 
 def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
-    """Reject JSON whose structural nesting exceeds the configured ceiling.
-
-    This is a preflight over raw bytes so deeply nested malformed input is
-    rejected before ``json.loads`` can consume Python recursion budget. JSON
-    delimiters inside strings are ignored, including escaped quotes.
-    """
-
+    """Reject JSON whose structural nesting exceeds the configured ceiling."""
     depth = 0
     in_string = False
     escaped = False
@@ -32,7 +26,6 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
             elif byte == ord('"'):
                 in_string = False
             continue
-
         if byte == ord('"'):
             in_string = True
         elif byte in (ord("{"), ord("[")):
@@ -47,7 +40,7 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
 
 def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, int, int, int, list[str]]:
+) -> tuple[int, int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-rows", required=True, type=worker._positive_int)
@@ -55,12 +48,16 @@ def _parse_resource_args(
         "--max-result-value-bytes", required=True, type=worker._positive_int
     )
     parser.add_argument("--max-result-bytes", required=True, type=worker._positive_int)
+    parser.add_argument(
+        "--max-transcript-result-bytes", required=True, type=worker._positive_int
+    )
     args, remaining = parser.parse_known_args(argv)
     return (
         args.max_json_depth,
         args.max_result_rows,
         args.max_result_value_bytes,
         args.max_result_bytes,
+        args.max_transcript_result_bytes,
         remaining,
     )
 
@@ -101,16 +98,14 @@ def _bounded_execute_statement(
     cursor = connection.execute(statement.sql, statement.params)
     columns = [] if cursor.description is None else [item[0] for item in cursor.description]
     rows: list[list[Any]] = []
-    used_bytes = 2  # JSON array brackets for the rows payload.
+    used_bytes = 2
     if used_bytes > max_result_bytes:
         raise ValueError(f"result exceeds max_result_bytes: {max_result_bytes}")
-
     for row in cursor:
         if len(rows) >= max_result_rows:
             raise ValueError(f"result exceeds max_result_rows: {max_result_rows}")
-
         normalized_row: list[Any] = []
-        row_bytes = 2  # JSON array brackets for this row.
+        row_bytes = 2
         for value in row:
             normalized = _bounded_normalize(
                 value, max_result_value_bytes=max_result_value_bytes
@@ -123,7 +118,6 @@ def _bounded_execute_statement(
                     f"result exceeds max_result_bytes: {max_result_bytes}"
                 )
             normalized_row.append(normalized)
-
         used_bytes += row_bytes + (1 if rows else 0)
         rows.append(normalized_row)
     return {"columns": columns, "rows": rows}
@@ -135,6 +129,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_result_rows,
         max_result_value_bytes,
         max_result_bytes,
+        max_transcript_result_bytes,
         worker_argv,
     ) = _parse_resource_args(argv)
     raw = sys.stdin.buffer.read()
@@ -147,14 +142,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     replay_stdin = io.TextIOWrapper(io.BytesIO(raw), encoding="utf-8")
     original_stdin = sys.stdin
     original_execute_statement = worker._execute_statement
+    transcript_result_bytes = 0
+
+    def bounded_execute(connection: Any, statement: Any) -> dict[str, Any]:
+        nonlocal transcript_result_bytes
+        result = _bounded_execute_statement(
+            connection,
+            statement,
+            max_result_rows=max_result_rows,
+            max_result_value_bytes=max_result_value_bytes,
+            max_result_bytes=max_result_bytes,
+        )
+        result_bytes = _serialized_json_size(result)
+        if transcript_result_bytes + result_bytes > max_transcript_result_bytes:
+            raise ValueError(
+                "transaction transcript results exceed "
+                f"max_transcript_result_bytes: {max_transcript_result_bytes}"
+            )
+        transcript_result_bytes += result_bytes
+        return result
+
     sys.stdin = replay_stdin
-    worker._execute_statement = lambda connection, statement: _bounded_execute_statement(
-        connection,
-        statement,
-        max_result_rows=max_result_rows,
-        max_result_value_bytes=max_result_value_bytes,
-        max_result_bytes=max_result_bytes,
-    )
+    worker._execute_statement = bounded_execute
     try:
         return worker.main(worker_argv)
     finally:
