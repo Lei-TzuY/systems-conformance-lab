@@ -48,6 +48,68 @@ def test_export_is_deterministic_and_import_replays_real_targets(tmp_path) -> No
     assert replay.bundle.metadata == {"source": "archive-integration"}
 
 
+def test_export_publishes_only_after_complete_archive_and_replays_real_targets(
+    tmp_path, monkeypatch
+) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    original = harness.write_repro(
+        tmp_path / "original",
+        input_bytes=b"BUG-atomic",
+        metadata={"source": "atomic-export-integration"},
+    )
+    archive_path = tmp_path / "atomic.zip"
+    real_zip_file = repro_archive_module.zipfile.ZipFile
+    writes = 0
+
+    class ObservingZipFile(real_zip_file):
+        def writestr(self, *args, **kwargs):
+            nonlocal writes
+            writes += 1
+            assert not archive_path.exists()
+            return super().writestr(*args, **kwargs)
+
+    monkeypatch.setattr(repro_archive_module.zipfile, "ZipFile", ObservingZipFile)
+    archive = export_repro_archive(original.path, archive_path)
+    monkeypatch.setattr(repro_archive_module.zipfile, "ZipFile", real_zip_file)
+
+    assert writes == 2
+    assert archive.is_file()
+    assert not list(tmp_path.glob(".atomic.zip.export-*.tmp"))
+
+    imported = import_repro_archive(archive, tmp_path / "imported-atomic")
+    replay = harness.replay_repro(imported.path)
+    assert replay.reproduced
+    assert replay.bundle.metadata == {"source": "atomic-export-integration"}
+
+
+def test_export_write_failure_never_publishes_partial_archive(tmp_path, monkeypatch) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    original = harness.write_repro(
+        tmp_path / "original",
+        input_bytes=b"BUG",
+        metadata={"source": "atomic-export-failure"},
+    )
+    archive_path = tmp_path / "failed.zip"
+    real_zip_file = repro_archive_module.zipfile.ZipFile
+
+    class FailingZipFile(real_zip_file):
+        writes = 0
+
+        def writestr(self, *args, **kwargs):
+            type(self).writes += 1
+            if type(self).writes == 2:
+                raise OSError("simulated archive write failure")
+            return super().writestr(*args, **kwargs)
+
+    monkeypatch.setattr(repro_archive_module.zipfile, "ZipFile", FailingZipFile)
+
+    with pytest.raises(OSError, match="simulated archive write failure"):
+        export_repro_archive(original.path, archive_path)
+
+    assert not archive_path.exists()
+    assert not list(tmp_path.glob(".failed.zip.export-*.tmp"))
+
+
 def test_export_archives_validated_snapshot_when_source_changes_after_load(
     tmp_path, monkeypatch
 ) -> None:
