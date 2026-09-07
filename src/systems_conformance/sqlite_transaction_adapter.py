@@ -9,6 +9,7 @@ from .harness import CommandTarget
 DEFAULT_MAX_SQL_BYTES = 64 * 1024
 DEFAULT_MAX_JSON_DEPTH = 32
 DEFAULT_MAX_RESULT_ROWS = 10_000
+DEFAULT_MAX_RESULT_COLUMNS = 256
 DEFAULT_MAX_RESULT_VALUE_BYTES = 1024 * 1024
 DEFAULT_MAX_RESULT_BYTES = 512 * 1024
 DEFAULT_MAX_TRANSCRIPT_RESULT_BYTES = 1024 * 1024
@@ -24,9 +25,10 @@ class SQLiteTransactionTarget:
     in-memory database; ``reopen_before_observe`` switches to an internally managed
     temporary database file and closes/reopens SQLite before the observation. The
     worker emits a deterministic transcript suitable for differential comparison and
-    repro replay. ``max_result_rows`` bounds each statement's result cardinality before
-    the child materializes the full result set, ``max_result_value_bytes`` bounds each
-    TEXT/BLOB value before UTF-8/hex serialization expansion, ``max_result_bytes``
+    repro replay. ``max_result_columns`` bounds each statement's result width before
+    row materialization, ``max_result_rows`` bounds each statement's result cardinality
+    before the child materializes the full result set, ``max_result_value_bytes`` bounds
+    each TEXT/BLOB value before UTF-8/hex serialization expansion, ``max_result_bytes``
     bounds each statement's compact normalized ``rows`` JSON payload, and
     ``max_transcript_result_bytes`` bounds the cumulative compact JSON bytes of all
     transaction and observation statement result objects before the full transcript is
@@ -41,6 +43,7 @@ class SQLiteTransactionTarget:
     max_sql_bytes: int = DEFAULT_MAX_SQL_BYTES
     max_json_depth: int = DEFAULT_MAX_JSON_DEPTH
     max_result_rows: int = DEFAULT_MAX_RESULT_ROWS
+    max_result_columns: int = DEFAULT_MAX_RESULT_COLUMNS
     max_result_value_bytes: int = DEFAULT_MAX_RESULT_VALUE_BYTES
     max_result_bytes: int = DEFAULT_MAX_RESULT_BYTES
     max_transcript_result_bytes: int = DEFAULT_MAX_TRANSCRIPT_RESULT_BYTES
@@ -77,6 +80,12 @@ class SQLiteTransactionTarget:
             or self.max_result_rows <= 0
         ):
             raise ValueError("max_result_rows must be a positive integer")
+        if (
+            isinstance(self.max_result_columns, bool)
+            or not isinstance(self.max_result_columns, int)
+            or self.max_result_columns <= 0
+        ):
+            raise ValueError("max_result_columns must be a positive integer")
         if (
             isinstance(self.max_result_value_bytes, bool)
             or not isinstance(self.max_result_value_bytes, int)
@@ -124,6 +133,8 @@ class SQLiteTransactionTarget:
             str(self.max_json_depth),
             "--max-result-rows",
             str(self.max_result_rows),
+            "--max-result-columns",
+            str(self.max_result_columns),
             "--max-result-value-bytes",
             str(self.max_result_value_bytes),
             "--max-result-bytes",
