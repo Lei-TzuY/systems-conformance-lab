@@ -10,6 +10,7 @@ DEFAULT_MAX_SQL_BYTES = 64 * 1024
 DEFAULT_MAX_JSON_DEPTH = 32
 DEFAULT_MAX_PARAMS = 999
 DEFAULT_MAX_PARAM_VALUE_BYTES = 1024 * 1024
+DEFAULT_MAX_PARAM_BYTES = 4 * 1024 * 1024
 DEFAULT_MAX_RESULT_ROWS = 10_000
 DEFAULT_MAX_RESULT_COLUMNS = 256
 DEFAULT_MAX_RESULT_VALUE_BYTES = 1024 * 1024
@@ -29,13 +30,14 @@ class SQLiteTransactionTarget:
     worker emits a deterministic transcript suitable for differential comparison and
     repro replay. ``max_params`` bounds each transaction/observation statement's bind
     cardinality before SQLite execution, ``max_param_value_bytes`` bounds each string
-    bind by its decoded UTF-8 byte length before SQLite execution,
-    ``max_result_columns`` bounds each statement's result width before row
-    materialization, ``max_result_rows`` bounds each statement's result cardinality
-    before the child materializes the full result set, ``max_result_value_bytes``
-    bounds each TEXT/BLOB value before UTF-8/hex serialization expansion,
-    ``max_result_bytes`` bounds each statement's compact normalized ``rows`` JSON
-    payload, and ``max_transcript_result_bytes`` bounds the cumulative compact JSON
+    bind by its decoded UTF-8 byte length before SQLite execution, ``max_param_bytes``
+    bounds aggregate decoded UTF-8 bytes across all string binds in each transaction or
+    observation statement before SQLite execution, ``max_result_columns`` bounds each
+    statement's result width before row materialization, ``max_result_rows`` bounds each
+    statement's result cardinality before the child materializes the full result set,
+    ``max_result_value_bytes`` bounds each TEXT/BLOB value before UTF-8/hex serialization
+    expansion, ``max_result_bytes`` bounds each statement's compact normalized ``rows``
+    JSON payload, and ``max_transcript_result_bytes`` bounds the cumulative compact JSON
     bytes of all transaction and observation statement result objects before the full
     transcript is retained and serialized.
     """
@@ -49,6 +51,7 @@ class SQLiteTransactionTarget:
     max_json_depth: int = DEFAULT_MAX_JSON_DEPTH
     max_params: int = DEFAULT_MAX_PARAMS
     max_param_value_bytes: int = DEFAULT_MAX_PARAM_VALUE_BYTES
+    max_param_bytes: int = DEFAULT_MAX_PARAM_BYTES
     max_result_rows: int = DEFAULT_MAX_RESULT_ROWS
     max_result_columns: int = DEFAULT_MAX_RESULT_COLUMNS
     max_result_value_bytes: int = DEFAULT_MAX_RESULT_VALUE_BYTES
@@ -93,6 +96,12 @@ class SQLiteTransactionTarget:
             or self.max_param_value_bytes <= 0
         ):
             raise ValueError("max_param_value_bytes must be a positive integer")
+        if (
+            isinstance(self.max_param_bytes, bool)
+            or not isinstance(self.max_param_bytes, int)
+            or self.max_param_bytes <= 0
+        ):
+            raise ValueError("max_param_bytes must be a positive integer")
         if (
             isinstance(self.max_result_rows, bool)
             or not isinstance(self.max_result_rows, int)
@@ -154,6 +163,8 @@ class SQLiteTransactionTarget:
             str(self.max_params),
             "--max-param-value-bytes",
             str(self.max_param_value_bytes),
+            "--max-param-bytes",
+            str(self.max_param_bytes),
             "--max-result-rows",
             str(self.max_result_rows),
             "--max-result-columns",
