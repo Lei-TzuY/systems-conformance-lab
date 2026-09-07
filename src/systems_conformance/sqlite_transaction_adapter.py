@@ -11,6 +11,7 @@ DEFAULT_MAX_JSON_DEPTH = 32
 DEFAULT_MAX_RESULT_ROWS = 10_000
 DEFAULT_MAX_RESULT_VALUE_BYTES = 1024 * 1024
 DEFAULT_MAX_RESULT_BYTES = 512 * 1024
+DEFAULT_MAX_TRANSCRIPT_RESULT_BYTES = 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -25,8 +26,11 @@ class SQLiteTransactionTarget:
     worker emits a deterministic transcript suitable for differential comparison and
     repro replay. ``max_result_rows`` bounds each statement's result cardinality before
     the child materializes the full result set, ``max_result_value_bytes`` bounds each
-    TEXT/BLOB value before UTF-8/hex serialization expansion, and ``max_result_bytes``
-    bounds each statement's compact normalized ``rows`` JSON payload.
+    TEXT/BLOB value before UTF-8/hex serialization expansion, ``max_result_bytes``
+    bounds each statement's compact normalized ``rows`` JSON payload, and
+    ``max_transcript_result_bytes`` bounds the cumulative compact JSON bytes of all
+    transaction and observation statement result objects before the full transcript is
+    retained and serialized.
     """
 
     finalize: Literal["commit", "rollback"] = "commit"
@@ -39,6 +43,7 @@ class SQLiteTransactionTarget:
     max_result_rows: int = DEFAULT_MAX_RESULT_ROWS
     max_result_value_bytes: int = DEFAULT_MAX_RESULT_VALUE_BYTES
     max_result_bytes: int = DEFAULT_MAX_RESULT_BYTES
+    max_transcript_result_bytes: int = DEFAULT_MAX_TRANSCRIPT_RESULT_BYTES
     max_vm_steps: int | None = None
 
     def __post_init__(self) -> None:
@@ -84,6 +89,12 @@ class SQLiteTransactionTarget:
             or self.max_result_bytes <= 0
         ):
             raise ValueError("max_result_bytes must be a positive integer")
+        if (
+            isinstance(self.max_transcript_result_bytes, bool)
+            or not isinstance(self.max_transcript_result_bytes, int)
+            or self.max_transcript_result_bytes <= 0
+        ):
+            raise ValueError("max_transcript_result_bytes must be a positive integer")
         if self.max_vm_steps is not None and (
             isinstance(self.max_vm_steps, bool)
             or not isinstance(self.max_vm_steps, int)
@@ -117,6 +128,8 @@ class SQLiteTransactionTarget:
             str(self.max_result_value_bytes),
             "--max-result-bytes",
             str(self.max_result_bytes),
+            "--max-transcript-result-bytes",
+            str(self.max_transcript_result_bytes),
         ]
         if self.max_vm_steps is not None:
             argv.extend(("--max-vm-steps", str(self.max_vm_steps)))
