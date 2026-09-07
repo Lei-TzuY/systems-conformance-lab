@@ -8,6 +8,8 @@ from typing import Any
 
 from . import _sqlite_worker as worker
 
+_ORIGINAL_NORMALIZE = worker._normalize
+
 
 def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
     """Reject JSON whose structural nesting exceeds the configured ceiling."""
@@ -51,10 +53,10 @@ def _bounded_normalize(value: Any, *, max_result_value_bytes: int) -> Any:
     elif isinstance(value, str):
         size = len(value.encode("utf-8"))
     else:
-        return worker._normalize(value)
+        return _ORIGINAL_NORMALIZE(value)
     if size > max_result_value_bytes:
         raise ValueError(f"result value exceeds max_result_value_bytes: {max_result_value_bytes}")
-    return worker._normalize(value)
+    return _ORIGINAL_NORMALIZE(value)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
