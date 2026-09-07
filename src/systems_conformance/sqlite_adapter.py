@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from .harness import CommandTarget
 
 DEFAULT_MAX_JSON_DEPTH = 32
+DEFAULT_MAX_SETUP_STATEMENTS = 256
 DEFAULT_MAX_RESULT_COLUMNS = 256
 DEFAULT_MAX_RESULT_ROWS = 10_000
 DEFAULT_MAX_RESULT_VALUE_BYTES = 1024 * 1024
@@ -21,8 +22,9 @@ class SQLiteQueryTarget:
     evaluations. SQL still runs as untrusted target input and remains bounded by the
     shared runner's timeout and output limits. ``max_json_depth`` bounds structural JSON
     nesting before Python decoding, ``max_sql_bytes`` bounds every setup/query SQL string
-    before SQLite opens the case, ``max_result_columns`` bounds result width before row
-    materialization, ``max_result_rows`` bounds result cardinality,
+    before SQLite opens the case, ``max_setup_statements`` bounds setup-list cardinality
+    before any setup statement executes, ``max_result_columns`` bounds result width before
+    row materialization, ``max_result_rows`` bounds result cardinality,
     ``max_result_value_bytes`` bounds each TEXT/BLOB before JSON/hex expansion,
     ``max_result_bytes`` bounds cumulative normalized row JSON bytes before full-result
     serialization, and ``max_vm_steps`` optionally adds a deterministic SQLite
@@ -33,6 +35,7 @@ class SQLiteQueryTarget:
     enable_faults: bool = False
     max_sql_bytes: int = 64 * 1024
     max_json_depth: int = DEFAULT_MAX_JSON_DEPTH
+    max_setup_statements: int = DEFAULT_MAX_SETUP_STATEMENTS
     max_result_columns: int = DEFAULT_MAX_RESULT_COLUMNS
     max_result_rows: int = DEFAULT_MAX_RESULT_ROWS
     max_result_value_bytes: int = DEFAULT_MAX_RESULT_VALUE_BYTES
@@ -52,6 +55,12 @@ class SQLiteQueryTarget:
             or self.max_json_depth <= 0
         ):
             raise ValueError("max_json_depth must be a positive integer")
+        if (
+            isinstance(self.max_setup_statements, bool)
+            or not isinstance(self.max_setup_statements, int)
+            or self.max_setup_statements <= 0
+        ):
+            raise ValueError("max_setup_statements must be a positive integer")
         if (
             isinstance(self.max_result_columns, bool)
             or not isinstance(self.max_result_columns, int)
@@ -95,6 +104,8 @@ class SQLiteQueryTarget:
             "--enable-faults" if self.enable_faults else "--disable-faults",
             "--max-sql-bytes",
             str(self.max_sql_bytes),
+            "--max-setup-statements",
+            str(self.max_setup_statements),
             "--max-result-columns",
             str(self.max_result_columns),
             "--max-result-rows",
