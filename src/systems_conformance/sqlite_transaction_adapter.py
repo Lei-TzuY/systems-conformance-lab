@@ -10,6 +10,7 @@ DEFAULT_MAX_SQL_BYTES = 64 * 1024
 DEFAULT_MAX_JSON_DEPTH = 32
 DEFAULT_MAX_RESULT_ROWS = 10_000
 DEFAULT_MAX_RESULT_VALUE_BYTES = 1024 * 1024
+DEFAULT_MAX_RESULT_BYTES = 512 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -23,8 +24,9 @@ class SQLiteTransactionTarget:
     temporary database file and closes/reopens SQLite before the observation. The
     worker emits a deterministic transcript suitable for differential comparison and
     repro replay. ``max_result_rows`` bounds each statement's result cardinality before
-    the child materializes the full result set, while ``max_result_value_bytes`` bounds
-    each TEXT/BLOB value before UTF-8/hex serialization expansion.
+    the child materializes the full result set, ``max_result_value_bytes`` bounds each
+    TEXT/BLOB value before UTF-8/hex serialization expansion, and ``max_result_bytes``
+    bounds each statement's compact normalized ``rows`` JSON payload.
     """
 
     finalize: Literal["commit", "rollback"] = "commit"
@@ -36,6 +38,7 @@ class SQLiteTransactionTarget:
     max_json_depth: int = DEFAULT_MAX_JSON_DEPTH
     max_result_rows: int = DEFAULT_MAX_RESULT_ROWS
     max_result_value_bytes: int = DEFAULT_MAX_RESULT_VALUE_BYTES
+    max_result_bytes: int = DEFAULT_MAX_RESULT_BYTES
     max_vm_steps: int | None = None
 
     def __post_init__(self) -> None:
@@ -75,6 +78,12 @@ class SQLiteTransactionTarget:
             or self.max_result_value_bytes <= 0
         ):
             raise ValueError("max_result_value_bytes must be a positive integer")
+        if (
+            isinstance(self.max_result_bytes, bool)
+            or not isinstance(self.max_result_bytes, int)
+            or self.max_result_bytes <= 0
+        ):
+            raise ValueError("max_result_bytes must be a positive integer")
         if self.max_vm_steps is not None and (
             isinstance(self.max_vm_steps, bool)
             or not isinstance(self.max_vm_steps, int)
@@ -106,6 +115,8 @@ class SQLiteTransactionTarget:
             str(self.max_result_rows),
             "--max-result-value-bytes",
             str(self.max_result_value_bytes),
+            "--max-result-bytes",
+            str(self.max_result_bytes),
         ]
         if self.max_vm_steps is not None:
             argv.extend(("--max-vm-steps", str(self.max_vm_steps)))
