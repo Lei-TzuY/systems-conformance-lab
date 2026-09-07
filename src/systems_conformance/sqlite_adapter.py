@@ -8,6 +8,7 @@ from .harness import CommandTarget
 DEFAULT_MAX_JSON_DEPTH = 32
 DEFAULT_MAX_RESULT_ROWS = 10_000
 DEFAULT_MAX_RESULT_VALUE_BYTES = 1024 * 1024
+DEFAULT_MAX_RESULT_BYTES = 512 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -20,9 +21,10 @@ class SQLiteQueryTarget:
     shared runner's timeout and output limits. ``max_json_depth`` bounds structural JSON
     nesting before Python decoding, ``max_sql_bytes`` bounds every setup/query SQL string
     before SQLite opens the case, ``max_result_rows`` bounds result cardinality,
-    ``max_result_value_bytes`` bounds each TEXT/BLOB before JSON/hex expansion, and
-    ``max_vm_steps`` optionally adds a deterministic SQLite progress-handler budget below
-    the wall-clock timeout.
+    ``max_result_value_bytes`` bounds each TEXT/BLOB before JSON/hex expansion,
+    ``max_result_bytes`` bounds cumulative normalized row JSON bytes before full-result
+    serialization, and ``max_vm_steps`` optionally adds a deterministic SQLite
+    progress-handler budget below the wall-clock timeout.
     """
 
     foreign_keys: bool = True
@@ -31,6 +33,7 @@ class SQLiteQueryTarget:
     max_json_depth: int = DEFAULT_MAX_JSON_DEPTH
     max_result_rows: int = DEFAULT_MAX_RESULT_ROWS
     max_result_value_bytes: int = DEFAULT_MAX_RESULT_VALUE_BYTES
+    max_result_bytes: int = DEFAULT_MAX_RESULT_BYTES
     max_vm_steps: int | None = None
 
     def __post_init__(self) -> None:
@@ -58,6 +61,12 @@ class SQLiteQueryTarget:
             or self.max_result_value_bytes <= 0
         ):
             raise ValueError("max_result_value_bytes must be a positive integer")
+        if (
+            isinstance(self.max_result_bytes, bool)
+            or not isinstance(self.max_result_bytes, int)
+            or self.max_result_bytes <= 0
+        ):
+            raise ValueError("max_result_bytes must be a positive integer")
         if self.max_vm_steps is not None and (
             isinstance(self.max_vm_steps, bool)
             or not isinstance(self.max_vm_steps, int)
@@ -81,6 +90,8 @@ class SQLiteQueryTarget:
             str(self.max_result_rows),
             "--max-result-value-bytes",
             str(self.max_result_value_bytes),
+            "--max-result-bytes",
+            str(self.max_result_bytes),
         ]
         if self.max_vm_steps is not None:
             argv.extend(("--max-vm-steps", str(self.max_vm_steps)))
