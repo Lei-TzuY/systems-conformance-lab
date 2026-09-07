@@ -44,6 +44,17 @@ def _read_bounded_bytes(path: Path, *, max_bytes: int, label: str) -> bytes:
     return data
 
 
+def _publish_file_no_replace(staging_path: Path, destination: Path) -> None:
+    """Atomically publish one closed staging file without replacing a destination."""
+
+    try:
+        os.link(staging_path, destination)
+    except FileExistsError:
+        raise FileExistsError(
+            f"repro archive destination already exists: {destination}"
+        ) from None
+
+
 def export_repro_archive(
     bundle_path: Path,
     archive_path: Path,
@@ -57,11 +68,13 @@ def export_repro_archive(
     ``manifest.json`` that has been validated together. ZIP_STORED plus fixed
     member metadata keeps equal bundles byte-for-byte reproducible across export
     locations while avoiding decompression bombs on the supported import path.
+    The final archive path is published atomically only after the ZIP is closed,
+    so readers never observe a partially written transport artifact.
     """
 
     bundle_path = Path(bundle_path)
     archive_path = Path(archive_path)
-    if archive_path.exists():
+    if archive_path.exists() or archive_path.is_symlink():
         raise FileExistsError(f"repro archive destination already exists: {archive_path}")
 
     loaded = load_repro_bundle(
@@ -91,19 +104,26 @@ def export_repro_archive(
         input_bytes = (snapshot / "input.bin").read_bytes()
         manifest = (snapshot / "manifest.json").read_bytes()
 
+        staging_fd, staging_name = tempfile.mkstemp(
+            prefix=f".{archive_path.name}.export-",
+            suffix=".tmp",
+            dir=archive_path.parent,
+        )
+        os.close(staging_fd)
+        staging_archive = Path(staging_name)
         try:
             with zipfile.ZipFile(
-                archive_path,
-                mode="x",
+                staging_archive,
+                mode="w",
                 compression=zipfile.ZIP_STORED,
                 allowZip64=False,
             ) as archive:
                 archive.writestr(_regular_zip_info("input.bin"), input_bytes)
                 archive.writestr(_regular_zip_info("manifest.json"), manifest)
-        except BaseException:
-            if archive_path.exists():
-                archive_path.unlink()
-            raise
+            _publish_file_no_replace(staging_archive, archive_path)
+        finally:
+            if staging_archive.exists():
+                staging_archive.unlink()
 
     return archive_path
 
