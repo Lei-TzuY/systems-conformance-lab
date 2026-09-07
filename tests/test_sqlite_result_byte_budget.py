@@ -27,6 +27,18 @@ def test_sqlite_target_rejects_invalid_result_byte_budgets(value: object) -> Non
         SQLiteQueryTarget(max_result_bytes=value)  # type: ignore[arg-type]
 
 
+def test_sqlite_result_byte_budget_counts_empty_rows_array() -> None:
+    rejected = _execute(_request("SELECT 1 WHERE 0"), SQLiteQueryTarget(max_result_bytes=1))
+    accepted = _execute(_request("SELECT 1 WHERE 0"), SQLiteQueryTarget(max_result_bytes=2))
+
+    assert rejected.infrastructure_error is None
+    assert rejected.exit_code == 4
+    assert rejected.stderr.text.strip() == "result_error: result exceeds max_result_bytes: 1"
+    assert accepted.infrastructure_error is None
+    assert accepted.exit_code == 0
+    assert json.loads(accepted.stdout.text)["rows"] == []
+
+
 def test_sqlite_result_byte_budget_accepts_exact_rows_json_boundary() -> None:
     result = _execute(
         _request("SELECT 1 UNION ALL SELECT 2"),
