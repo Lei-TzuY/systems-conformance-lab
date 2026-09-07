@@ -3,6 +3,7 @@ import sys
 import zipfile
 
 import pytest
+
 import systems_conformance.repro_archive as repro_archive_module
 from systems_conformance import (
     CommandTarget,
