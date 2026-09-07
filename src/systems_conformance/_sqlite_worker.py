@@ -28,6 +28,12 @@ class VmBudgetExceeded(RuntimeError):
         super().__init__(str(max_vm_steps))
 
 
+class ResultRowBudgetExceeded(RuntimeError):
+    def __init__(self, max_result_rows: int) -> None:
+        self.max_result_rows = max_result_rows
+        super().__init__(str(max_result_rows))
+
+
 @dataclass(slots=True)
 class _VmBudget:
     remaining: int
@@ -57,6 +63,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     faults.add_argument("--enable-faults", action="store_true")
     faults.add_argument("--disable-faults", action="store_true")
     parser.add_argument("--max-sql-bytes", required=True, type=_positive_int)
+    parser.add_argument("--max-result-rows", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
     return parser.parse_args(argv)
 
@@ -179,12 +186,22 @@ def _checkpoint(controller: FaultController | None, operation: str) -> None:
         raise InjectedFault(triggered)
 
 
+def _collect_rows(cursor: sqlite3.Cursor, *, max_result_rows: int) -> list[list[Any]]:
+    rows: list[list[Any]] = []
+    for row in cursor:
+        if len(rows) >= max_result_rows:
+            raise ResultRowBudgetExceeded(max_result_rows)
+        rows.append([_normalize(value) for value in row])
+    return rows
+
+
 def _run(
     raw: bytes,
     *,
     foreign_keys: bool,
     enable_faults: bool,
     max_sql_bytes: int,
+    max_result_rows: int,
     max_vm_steps: int | None,
 ) -> bytes:
     setup, query, params, fault = _decode_request(raw, max_sql_bytes=max_sql_bytes)
@@ -204,7 +221,7 @@ def _run(
             _checkpoint(controller, "query")
             cursor = connection.execute(query, params)
             columns = [] if cursor.description is None else [item[0] for item in cursor.description]
-            rows = [[_normalize(value) for value in row] for row in cursor.fetchall()]
+            rows = _collect_rows(cursor, max_result_rows=max_result_rows)
         except sqlite3.Error as exc:
             if budget is not None and budget.exhausted:
                 raise VmBudgetExceeded(max_vm_steps) from exc
@@ -226,6 +243,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             foreign_keys=args.foreign_keys,
             enable_faults=args.enable_faults,
             max_sql_bytes=args.max_sql_bytes,
+            max_result_rows=args.max_result_rows,
             max_vm_steps=args.max_vm_steps,
         )
     except ProtocolError as exc:
@@ -237,6 +255,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except VmBudgetExceeded as exc:
         sys.stderr.write(f"sqlite_vm_budget_exceeded: {exc.max_vm_steps}\n")
         return 6
+    except ResultRowBudgetExceeded as exc:
+        sys.stderr.write(f"result_error: result exceeds max_result_rows: {exc.max_result_rows}\n")
+        return 4
     except sqlite3.Error as exc:
         error_name = getattr(exc, "sqlite_errorname", type(exc).__name__)
         sys.stderr.write(f"sqlite_error: {error_name}\n")

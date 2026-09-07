@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from .harness import CommandTarget
 
 DEFAULT_MAX_JSON_DEPTH = 32
+DEFAULT_MAX_RESULT_ROWS = 10_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -17,14 +18,16 @@ class SQLiteQueryTarget:
     evaluations. SQL still runs as untrusted target input and remains bounded by the
     shared runner's timeout and output limits. ``max_json_depth`` bounds structural JSON
     nesting before Python decoding, ``max_sql_bytes`` bounds every setup/query SQL string
-    before SQLite opens the case, and ``max_vm_steps`` optionally adds a deterministic
-    SQLite progress-handler budget below the wall-clock timeout.
+    before SQLite opens the case, ``max_result_rows`` bounds result materialization, and
+    ``max_vm_steps`` optionally adds a deterministic SQLite progress-handler budget below
+    the wall-clock timeout.
     """
 
     foreign_keys: bool = True
     enable_faults: bool = False
     max_sql_bytes: int = 64 * 1024
     max_json_depth: int = DEFAULT_MAX_JSON_DEPTH
+    max_result_rows: int = DEFAULT_MAX_RESULT_ROWS
     max_vm_steps: int | None = None
 
     def __post_init__(self) -> None:
@@ -40,6 +43,12 @@ class SQLiteQueryTarget:
             or self.max_json_depth <= 0
         ):
             raise ValueError("max_json_depth must be a positive integer")
+        if (
+            isinstance(self.max_result_rows, bool)
+            or not isinstance(self.max_result_rows, int)
+            or self.max_result_rows <= 0
+        ):
+            raise ValueError("max_result_rows must be a positive integer")
         if self.max_vm_steps is not None and (
             isinstance(self.max_vm_steps, bool)
             or not isinstance(self.max_vm_steps, int)
@@ -59,6 +68,8 @@ class SQLiteQueryTarget:
             "--enable-faults" if self.enable_faults else "--disable-faults",
             "--max-sql-bytes",
             str(self.max_sql_bytes),
+            "--max-result-rows",
+            str(self.max_result_rows),
         ]
         if self.max_vm_steps is not None:
             argv.extend(("--max-vm-steps", str(self.max_vm_steps)))
