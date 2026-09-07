@@ -11,7 +11,6 @@ from typing import Any
 from . import _sqlite_worker as worker
 
 _ORIGINAL_NORMALIZE = worker._normalize
-_ORIGINAL_COLLECT_ROWS = worker._collect_rows
 
 
 def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
@@ -87,6 +86,9 @@ def _bounded_collect_rows(
 ) -> list[list[Any]]:
     rows: list[list[Any]] = []
     used_bytes = 2  # JSON array brackets for the rows payload.
+    if used_bytes > max_result_bytes:
+        raise ValueError(f"result exceeds max_result_bytes: {max_result_bytes}")
+
     for row in cursor:
         if len(rows) >= max_result_rows:
             raise worker.ResultRowBudgetExceeded(max_result_rows)
