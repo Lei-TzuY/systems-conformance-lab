@@ -40,10 +40,11 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
 
 def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, int, int, int, int, list[str]]:
+) -> tuple[int, int, int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-rows", required=True, type=worker._positive_int)
+    parser.add_argument("--max-result-columns", required=True, type=worker._positive_int)
     parser.add_argument(
         "--max-result-value-bytes", required=True, type=worker._positive_int
     )
@@ -55,6 +56,7 @@ def _parse_resource_args(
     return (
         args.max_json_depth,
         args.max_result_rows,
+        args.max_result_columns,
         args.max_result_value_bytes,
         args.max_result_bytes,
         args.max_transcript_result_bytes,
@@ -92,10 +94,14 @@ def _bounded_execute_statement(
     statement: Any,
     *,
     max_result_rows: int,
+    max_result_columns: int,
     max_result_value_bytes: int,
     max_result_bytes: int,
 ) -> dict[str, Any]:
     cursor = connection.execute(statement.sql, statement.params)
+    column_count = 0 if cursor.description is None else len(cursor.description)
+    if column_count > max_result_columns:
+        raise ValueError(f"result exceeds max_result_columns: {max_result_columns}")
     columns = [] if cursor.description is None else [item[0] for item in cursor.description]
     rows: list[list[Any]] = []
     used_bytes = 2
@@ -127,6 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     (
         max_json_depth,
         max_result_rows,
+        max_result_columns,
         max_result_value_bytes,
         max_result_bytes,
         max_transcript_result_bytes,
@@ -150,6 +157,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             connection,
             statement,
             max_result_rows=max_result_rows,
+            max_result_columns=max_result_columns,
             max_result_value_bytes=max_result_value_bytes,
             max_result_bytes=max_result_bytes,
         )
