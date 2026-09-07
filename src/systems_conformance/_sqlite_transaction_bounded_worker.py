@@ -4,8 +4,11 @@ import argparse
 import io
 import sys
 from collections.abc import Sequence
+from typing import Any
 
 from . import _sqlite_transaction_worker as worker
+
+_ORIGINAL_EXECUTE_STATEMENT = worker._execute_statement
 
 
 def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
@@ -41,17 +44,34 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
             depth -= 1
 
 
-def _parse_depth_arg(
+def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, list[str]]:
+) -> tuple[int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
+    parser.add_argument("--max-result-rows", required=True, type=worker._positive_int)
     args, remaining = parser.parse_known_args(argv)
-    return args.max_json_depth, remaining
+    return args.max_json_depth, args.max_result_rows, remaining
+
+
+def _bounded_execute_statement(
+    connection: Any,
+    statement: Any,
+    *,
+    max_result_rows: int,
+) -> dict[str, Any]:
+    cursor = connection.execute(statement.sql, statement.params)
+    columns = [] if cursor.description is None else [item[0] for item in cursor.description]
+    rows: list[list[Any]] = []
+    for row in cursor:
+        if len(rows) >= max_result_rows:
+            raise ValueError(f"result exceeds max_result_rows: {max_result_rows}")
+        rows.append([worker._normalize(value) for value in row])
+    return {"columns": columns, "rows": rows}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    max_json_depth, worker_argv = _parse_depth_arg(argv)
+    max_json_depth, max_result_rows, worker_argv = _parse_resource_args(argv)
     raw = sys.stdin.buffer.read()
     try:
         _validate_json_depth(raw, max_json_depth=max_json_depth)
@@ -61,10 +81,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     replay_stdin = io.TextIOWrapper(io.BytesIO(raw), encoding="utf-8")
     original_stdin = sys.stdin
+    original_execute_statement = worker._execute_statement
     sys.stdin = replay_stdin
+    worker._execute_statement = lambda connection, statement: _bounded_execute_statement(
+        connection,
+        statement,
+        max_result_rows=max_result_rows,
+    )
     try:
         return worker.main(worker_argv)
     finally:
+        worker._execute_statement = original_execute_statement
         sys.stdin = original_stdin
 
 
