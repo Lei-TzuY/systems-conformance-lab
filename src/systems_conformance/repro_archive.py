@@ -1,3 +1,4 @@
+import io
 import os
 import shutil
 import stat
@@ -118,7 +119,9 @@ def import_repro_archive(
     """Import a deterministic repro archive through the normal bundle validator.
 
     Only the two direct-child regular members emitted by
-    :func:`export_repro_archive` are accepted. Unexpected paths, duplicates,
+    :func:`export_repro_archive` are accepted. The source archive is first read
+    into one bounded immutable byte snapshot, so later path mutation cannot
+    change the ZIP bytes being validated. Unexpected paths, duplicates,
     encryption, compression-method drift, oversized artifacts, and invalid
     bundle contents are rejected before the destination becomes visible.
     """
@@ -130,12 +133,15 @@ def import_repro_archive(
     destination = Path(destination)
     if archive_path.is_symlink() or not archive_path.is_file():
         raise ValueError(f"repro archive must be a regular file: {archive_path}")
-    if archive_path.stat().st_size > max_archive_bytes:
-        raise ValueError("repro archive exceeds max_archive_bytes")
+    archive_bytes = _read_bounded_bytes(
+        archive_path,
+        max_bytes=max_archive_bytes,
+        label="repro archive",
+    )
     if destination.exists():
         raise FileExistsError(f"repro bundle destination already exists: {destination}")
 
-    with zipfile.ZipFile(archive_path, mode="r") as archive:
+    with zipfile.ZipFile(io.BytesIO(archive_bytes), mode="r") as archive:
         members = archive.infolist()
         names = [member.filename for member in members]
         if len(members) != len(REPRO_ARCHIVE_MEMBERS) or set(names) != set(
