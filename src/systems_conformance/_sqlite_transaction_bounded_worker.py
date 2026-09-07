@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import io
+import json
 import sys
 from collections.abc import Sequence
 from typing import Any
@@ -46,18 +47,20 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
 
 def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, int, int, list[str]]:
+) -> tuple[int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-rows", required=True, type=worker._positive_int)
     parser.add_argument(
         "--max-result-value-bytes", required=True, type=worker._positive_int
     )
+    parser.add_argument("--max-result-bytes", required=True, type=worker._positive_int)
     args, remaining = parser.parse_known_args(argv)
     return (
         args.max_json_depth,
         args.max_result_rows,
         args.max_result_value_bytes,
+        args.max_result_bytes,
         remaining,
     )
 
@@ -76,27 +79,53 @@ def _bounded_normalize(value: Any, *, max_result_value_bytes: int) -> Any:
     return worker._normalize(value)
 
 
+def _serialized_json_size(value: Any) -> int:
+    return len(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    )
+
+
 def _bounded_execute_statement(
     connection: Any,
     statement: Any,
     *,
     max_result_rows: int,
     max_result_value_bytes: int,
+    max_result_bytes: int,
 ) -> dict[str, Any]:
     cursor = connection.execute(statement.sql, statement.params)
     columns = [] if cursor.description is None else [item[0] for item in cursor.description]
     rows: list[list[Any]] = []
+    used_bytes = 2  # JSON array brackets for the rows payload.
+    if used_bytes > max_result_bytes:
+        raise ValueError(f"result exceeds max_result_bytes: {max_result_bytes}")
+
     for row in cursor:
         if len(rows) >= max_result_rows:
             raise ValueError(f"result exceeds max_result_rows: {max_result_rows}")
-        rows.append(
-            [
-                _bounded_normalize(
-                    value, max_result_value_bytes=max_result_value_bytes
+
+        normalized_row: list[Any] = []
+        row_bytes = 2  # JSON array brackets for this row.
+        for value in row:
+            normalized = _bounded_normalize(
+                value, max_result_value_bytes=max_result_value_bytes
+            )
+            row_bytes += _serialized_json_size(normalized) + (
+                1 if normalized_row else 0
+            )
+            if used_bytes + row_bytes + (1 if rows else 0) > max_result_bytes:
+                raise ValueError(
+                    f"result exceeds max_result_bytes: {max_result_bytes}"
                 )
-                for value in row
-            ]
-        )
+            normalized_row.append(normalized)
+
+        used_bytes += row_bytes + (1 if rows else 0)
+        rows.append(normalized_row)
     return {"columns": columns, "rows": rows}
 
 
@@ -105,6 +134,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_json_depth,
         max_result_rows,
         max_result_value_bytes,
+        max_result_bytes,
         worker_argv,
     ) = _parse_resource_args(argv)
     raw = sys.stdin.buffer.read()
@@ -123,6 +153,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         statement,
         max_result_rows=max_result_rows,
         max_result_value_bytes=max_result_value_bytes,
+        max_result_bytes=max_result_bytes,
     )
     try:
         return worker.main(worker_argv)
