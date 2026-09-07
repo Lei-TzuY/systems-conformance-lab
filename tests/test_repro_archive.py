@@ -80,6 +80,45 @@ def test_export_archives_validated_snapshot_when_source_changes_after_load(
     assert replay.bundle.metadata == {"source": "snapshot-integration"}
 
 
+def test_import_uses_bounded_snapshot_when_archive_path_changes_before_zip_parse(
+    tmp_path, monkeypatch
+) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    first = harness.write_repro(
+        tmp_path / "first-repro",
+        input_bytes=b"BUG-one",
+        metadata={"source": "import-snapshot-first"},
+    )
+    second = harness.write_repro(
+        tmp_path / "second-repro",
+        input_bytes=b"BUG-two",
+        metadata={"source": "import-snapshot-second"},
+    )
+    source_archive = export_repro_archive(first.path, tmp_path / "source.zip")
+    replacement_archive = export_repro_archive(second.path, tmp_path / "replacement.zip")
+    replacement_bytes = replacement_archive.read_bytes()
+
+    real_zip_file = repro_archive_module.zipfile.ZipFile
+    mutated = False
+
+    def mutate_path_then_open(file, *args, **kwargs):
+        nonlocal mutated
+        if not mutated:
+            mutated = True
+            source_archive.write_bytes(replacement_bytes)
+        return real_zip_file(file, *args, **kwargs)
+
+    monkeypatch.setattr(repro_archive_module.zipfile, "ZipFile", mutate_path_then_open)
+
+    imported = import_repro_archive(source_archive, tmp_path / "imported")
+
+    assert source_archive.read_bytes() == replacement_bytes
+    assert imported.input_path.read_bytes() == b"BUG-one"
+    replay = harness.replay_repro(imported.path)
+    assert replay.reproduced
+    assert replay.bundle.metadata == {"source": "import-snapshot-first"}
+
+
 def test_import_rejects_unexpected_member_before_destination_creation(tmp_path) -> None:
     archive_path = tmp_path / "bad.zip"
     with zipfile.ZipFile(archive_path, mode="w", compression=zipfile.ZIP_STORED) as archive:
