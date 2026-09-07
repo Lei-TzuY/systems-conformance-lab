@@ -41,10 +41,13 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
 
 def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, int, int, int, int, int, int, list[str]]:
+) -> tuple[int, int, int, int, int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-params", required=True, type=worker._positive_int)
+    parser.add_argument(
+        "--max-param-value-bytes", required=True, type=worker._positive_int
+    )
     parser.add_argument("--max-result-rows", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-columns", required=True, type=worker._positive_int)
     parser.add_argument(
@@ -58,6 +61,7 @@ def _parse_resource_args(
     return (
         args.max_json_depth,
         args.max_params,
+        args.max_param_value_bytes,
         args.max_result_rows,
         args.max_result_columns,
         args.max_result_value_bytes,
@@ -73,6 +77,7 @@ def _bounded_decode_statement(
     field: str,
     max_sql_bytes: int,
     max_params: int,
+    max_param_value_bytes: int,
 ) -> Any:
     statement = _ORIGINAL_DECODE_STATEMENT(
         value,
@@ -81,6 +86,11 @@ def _bounded_decode_statement(
     )
     if len(statement.params) > max_params:
         raise worker.ProtocolError(f"{field} params exceeds max_params: {max_params}")
+    for param in statement.params:
+        if isinstance(param, str) and len(param.encode("utf-8")) > max_param_value_bytes:
+            raise worker.ProtocolError(
+                f"{field} param value exceeds max_param_value_bytes: {max_param_value_bytes}"
+            )
     return statement
 
 
@@ -153,6 +163,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     (
         max_json_depth,
         max_params,
+        max_param_value_bytes,
         max_result_rows,
         max_result_columns,
         max_result_value_bytes,
@@ -179,6 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             field=field,
             max_sql_bytes=max_sql_bytes,
             max_params=max_params,
+            max_param_value_bytes=max_param_value_bytes,
         )
 
     def bounded_execute(connection: Any, statement: Any) -> dict[str, Any]:
