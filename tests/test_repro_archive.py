@@ -3,6 +3,7 @@ import sys
 import zipfile
 
 import pytest
+import systems_conformance.repro_archive as repro_archive_module
 
 from systems_conformance import (
     CommandTarget,
@@ -45,6 +46,38 @@ def test_export_is_deterministic_and_import_replays_real_targets(tmp_path) -> No
     assert replay.reproduced
     assert replay.run.signature == replay.bundle.signature
     assert replay.bundle.metadata == {"source": "archive-integration"}
+
+
+def test_export_archives_validated_snapshot_when_source_changes_after_load(
+    tmp_path, monkeypatch
+) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    original = harness.write_repro(
+        tmp_path / "original",
+        input_bytes=b"BUG",
+        metadata={"source": "snapshot-integration"},
+    )
+    real_loader = repro_archive_module.load_repro_bundle
+    calls = 0
+
+    def load_then_mutate(path, **kwargs):
+        nonlocal calls
+        loaded = real_loader(path, **kwargs)
+        calls += 1
+        if calls == 1:
+            original.input_path.write_bytes(b"BAD")
+        return loaded
+
+    monkeypatch.setattr(repro_archive_module, "load_repro_bundle", load_then_mutate)
+
+    archive = export_repro_archive(original.path, tmp_path / "snapshot.zip")
+    imported = import_repro_archive(archive, tmp_path / "imported")
+
+    assert original.input_path.read_bytes() == b"BAD"
+    assert imported.input_path.read_bytes() == b"BUG"
+    replay = harness.replay_repro(imported.path)
+    assert replay.reproduced
+    assert replay.bundle.metadata == {"source": "snapshot-integration"}
 
 
 def test_import_rejects_unexpected_member_before_destination_creation(tmp_path) -> None:
