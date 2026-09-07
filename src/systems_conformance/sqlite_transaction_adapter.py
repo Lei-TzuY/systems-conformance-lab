@@ -7,6 +7,7 @@ from typing import Literal
 from .harness import CommandTarget
 
 DEFAULT_MAX_SQL_BYTES = 64 * 1024
+DEFAULT_MAX_JSON_DEPTH = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +29,7 @@ class SQLiteTransactionTarget:
     reopen_before_observe: bool = False
     max_statements: int = 64
     max_sql_bytes: int = DEFAULT_MAX_SQL_BYTES
+    max_json_depth: int = DEFAULT_MAX_JSON_DEPTH
     max_vm_steps: int | None = None
 
     def __post_init__(self) -> None:
@@ -49,6 +51,12 @@ class SQLiteTransactionTarget:
             or self.max_sql_bytes <= 0
         ):
             raise ValueError("max_sql_bytes must be a positive integer")
+        if (
+            isinstance(self.max_json_depth, bool)
+            or not isinstance(self.max_json_depth, int)
+            or self.max_json_depth <= 0
+        ):
+            raise ValueError("max_json_depth must be a positive integer")
         if self.max_vm_steps is not None and (
             isinstance(self.max_vm_steps, bool)
             or not isinstance(self.max_vm_steps, int)
@@ -61,7 +69,7 @@ class SQLiteTransactionTarget:
         argv = [
             sys.executable,
             "-m",
-            "systems_conformance._sqlite_transaction_worker",
+            "systems_conformance._sqlite_transaction_bounded_worker",
             "--commit" if self.finalize == "commit" else "--rollback",
             "--foreign-keys" if self.foreign_keys else "--no-foreign-keys",
             "--enable-faults" if self.enable_faults else "--disable-faults",
@@ -74,6 +82,8 @@ class SQLiteTransactionTarget:
             str(self.max_statements),
             "--max-sql-bytes",
             str(self.max_sql_bytes),
+            "--max-json-depth",
+            str(self.max_json_depth),
         ]
         if self.max_vm_steps is not None:
             argv.extend(("--max-vm-steps", str(self.max_vm_steps)))
