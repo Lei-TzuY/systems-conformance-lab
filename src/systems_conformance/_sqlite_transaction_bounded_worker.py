@@ -46,12 +46,34 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
 
 def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, int, list[str]]:
+) -> tuple[int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-rows", required=True, type=worker._positive_int)
+    parser.add_argument(
+        "--max-result-value-bytes", required=True, type=worker._positive_int
+    )
     args, remaining = parser.parse_known_args(argv)
-    return args.max_json_depth, args.max_result_rows, remaining
+    return (
+        args.max_json_depth,
+        args.max_result_rows,
+        args.max_result_value_bytes,
+        remaining,
+    )
+
+
+def _bounded_normalize(value: Any, *, max_result_value_bytes: int) -> Any:
+    if isinstance(value, bytes):
+        size = len(value)
+    elif isinstance(value, str):
+        size = len(value.encode("utf-8"))
+    else:
+        return worker._normalize(value)
+    if size > max_result_value_bytes:
+        raise ValueError(
+            f"result value exceeds max_result_value_bytes: {max_result_value_bytes}"
+        )
+    return worker._normalize(value)
 
 
 def _bounded_execute_statement(
@@ -59,6 +81,7 @@ def _bounded_execute_statement(
     statement: Any,
     *,
     max_result_rows: int,
+    max_result_value_bytes: int,
 ) -> dict[str, Any]:
     cursor = connection.execute(statement.sql, statement.params)
     columns = [] if cursor.description is None else [item[0] for item in cursor.description]
@@ -66,12 +89,24 @@ def _bounded_execute_statement(
     for row in cursor:
         if len(rows) >= max_result_rows:
             raise ValueError(f"result exceeds max_result_rows: {max_result_rows}")
-        rows.append([worker._normalize(value) for value in row])
+        rows.append(
+            [
+                _bounded_normalize(
+                    value, max_result_value_bytes=max_result_value_bytes
+                )
+                for value in row
+            ]
+        )
     return {"columns": columns, "rows": rows}
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    max_json_depth, max_result_rows, worker_argv = _parse_resource_args(argv)
+    (
+        max_json_depth,
+        max_result_rows,
+        max_result_value_bytes,
+        worker_argv,
+    ) = _parse_resource_args(argv)
     raw = sys.stdin.buffer.read()
     try:
         _validate_json_depth(raw, max_json_depth=max_json_depth)
@@ -87,6 +122,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         connection,
         statement,
         max_result_rows=max_result_rows,
+        max_result_value_bytes=max_result_value_bytes,
     )
     try:
         return worker.main(worker_argv)
