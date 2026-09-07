@@ -144,6 +144,8 @@ def import_repro_archive(
     change the ZIP bytes being validated. Unexpected paths, duplicates,
     encryption, compression-method drift, oversized artifacts, and invalid
     bundle contents are rejected before the destination becomes visible.
+    Existing destination entries, including dangling symlinks, are never
+    intentionally replaced.
     """
 
     if max_archive_bytes <= 0:
@@ -158,7 +160,7 @@ def import_repro_archive(
         max_bytes=max_archive_bytes,
         label="repro archive",
     )
-    if destination.exists():
+    if destination.exists() or destination.is_symlink():
         raise FileExistsError(f"repro bundle destination already exists: {destination}")
 
     with zipfile.ZipFile(io.BytesIO(archive_bytes), mode="r") as archive:
@@ -204,7 +206,7 @@ def import_repro_archive(
             max_input_bytes=max_input_bytes,
             max_manifest_bytes=max_manifest_bytes,
         )
-        if destination.exists():
+        if destination.exists() or destination.is_symlink():
             raise FileExistsError(
                 f"repro bundle destination already exists: {destination}"
             )

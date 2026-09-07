@@ -7,3 +7,5 @@ Export first validates the source through `load_repro_bundle`, preserving the bo
 This keeps the transport invariant precise even when the source directory changes during export: emitted `input.bin` and `manifest.json` bytes have been validated together under the normal replay contract. A source mutation that cannot form a valid snapshot fails export; a mutation after the initial input load cannot silently replace the validated input bytes in the archive.
 
 The archive remains deterministic: members are exactly `input.bin` and `manifest.json`, use `ZIP_STORED`, and carry fixed metadata.
+
+On import, destination collision checks treat symbolic links as existing filesystem entries even when their targets do not exist. The destination is checked both before staging begins and again after staged bundle validation, so a dangling symlink already present at the requested publication path—or one that appears while validation is in progress—is rejected rather than intentionally replaced. Failed publication cleans the private staging directory.
