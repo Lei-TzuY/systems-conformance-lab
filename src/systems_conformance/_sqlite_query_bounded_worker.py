@@ -11,11 +11,11 @@ from typing import Any
 from . import _sqlite_worker as worker
 
 _ORIGINAL_NORMALIZE = worker._normalize
+_ORIGINAL_DECODE_REQUEST = worker._decode_request
 
 
 def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
     """Reject JSON whose structural nesting exceeds the configured ceiling."""
-
     depth = 0
     in_string = False
     escaped = False
@@ -28,31 +28,43 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
             elif byte == ord('"'):
                 in_string = False
             continue
-
         if byte == ord('"'):
             in_string = True
         elif byte in (ord("{"), ord("[")):
             depth += 1
             if depth > max_json_depth:
-                raise worker.ProtocolError(
-                    f"request exceeds max_json_depth: {max_json_depth}"
-                )
+                raise worker.ProtocolError(f"request exceeds max_json_depth: {max_json_depth}")
         elif byte in (ord("}"), ord("]")):
             depth -= 1
 
 
-def _parse_resource_args(argv: Sequence[str] | None) -> tuple[int, int, int, list[str]]:
+def _parse_resource_args(argv: Sequence[str] | None) -> tuple[int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-value-bytes", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-bytes", required=True, type=worker._positive_int)
+    parser.add_argument("--max-params", required=True, type=worker._positive_int)
     args, remaining = parser.parse_known_args(argv)
     return (
         args.max_json_depth,
         args.max_result_value_bytes,
         args.max_result_bytes,
+        args.max_params,
         remaining,
     )
+
+
+def _bounded_decode_request(
+    raw: bytes, *, max_sql_bytes: int, max_setup_statements: int, max_params: int
+) -> tuple[list[str], str, list[Any], worker.FaultSpec | None]:
+    setup, query, params, fault = _ORIGINAL_DECODE_REQUEST(
+        raw,
+        max_sql_bytes=max_sql_bytes,
+        max_setup_statements=max_setup_statements,
+    )
+    if len(params) > max_params:
+        raise worker.ProtocolError(f"params exceeds max_params: {max_params}")
+    return setup, query, params, fault
 
 
 def _bounded_normalize(value: Any, *, max_result_value_bytes: int) -> Any:
@@ -68,33 +80,21 @@ def _bounded_normalize(value: Any, *, max_result_value_bytes: int) -> Any:
 
 
 def _serialized_json_size(value: Any) -> int:
-    return len(
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            allow_nan=False,
-        ).encode("utf-8")
-    )
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
 
 
 def _bounded_collect_rows(
-    cursor: sqlite3.Cursor,
-    *,
-    max_result_rows: int,
-    max_result_bytes: int,
+    cursor: sqlite3.Cursor, *, max_result_rows: int, max_result_bytes: int
 ) -> list[list[Any]]:
     rows: list[list[Any]] = []
-    used_bytes = 2  # JSON array brackets for the rows payload.
+    used_bytes = 2
     if used_bytes > max_result_bytes:
         raise ValueError(f"result exceeds max_result_bytes: {max_result_bytes}")
-
     for row in cursor:
         if len(rows) >= max_result_rows:
             raise worker.ResultRowBudgetExceeded(max_result_rows)
-
         normalized_row: list[Any] = []
-        row_bytes = 2  # JSON array brackets for this row.
+        row_bytes = 2
         for value in row:
             normalized = worker._normalize(value)
             value_bytes = _serialized_json_size(normalized)
@@ -102,19 +102,13 @@ def _bounded_collect_rows(
             if used_bytes + row_bytes + (1 if rows else 0) > max_result_bytes:
                 raise ValueError(f"result exceeds max_result_bytes: {max_result_bytes}")
             normalized_row.append(normalized)
-
         used_bytes += row_bytes + (1 if rows else 0)
         rows.append(normalized_row)
     return rows
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    (
-        max_json_depth,
-        max_result_value_bytes,
-        max_result_bytes,
-        worker_argv,
-    ) = _parse_resource_args(argv)
+    max_json_depth, max_result_value_bytes, max_result_bytes, max_params, worker_argv = _parse_resource_args(argv)
     raw = sys.stdin.buffer.read()
     try:
         _validate_json_depth(raw, max_json_depth=max_json_depth)
@@ -126,18 +120,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     original_stdin = sys.stdin
     original_normalize = worker._normalize
     original_collect_rows = worker._collect_rows
+    original_decode_request = worker._decode_request
     sys.stdin = replay_stdin
-    worker._normalize = lambda value: _bounded_normalize(
-        value, max_result_value_bytes=max_result_value_bytes
-    )
+    worker._normalize = lambda value: _bounded_normalize(value, max_result_value_bytes=max_result_value_bytes)
     worker._collect_rows = lambda cursor, *, max_result_rows: _bounded_collect_rows(
-        cursor,
-        max_result_rows=max_result_rows,
-        max_result_bytes=max_result_bytes,
+        cursor, max_result_rows=max_result_rows, max_result_bytes=max_result_bytes
+    )
+    worker._decode_request = lambda raw, *, max_sql_bytes, max_setup_statements: _bounded_decode_request(
+        raw,
+        max_sql_bytes=max_sql_bytes,
+        max_setup_statements=max_setup_statements,
+        max_params=max_params,
     )
     try:
         return worker.main(worker_argv)
     finally:
+        worker._decode_request = original_decode_request
         worker._collect_rows = original_collect_rows
         worker._normalize = original_normalize
         sys.stdin = original_stdin
