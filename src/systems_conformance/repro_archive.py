@@ -35,6 +35,14 @@ def _has_explicit_non_regular_unix_type(member: zipfile.ZipInfo) -> bool:
     return file_type not in {0, stat.S_IFREG}
 
 
+def _read_bounded_bytes(path: Path, *, max_bytes: int, label: str) -> bytes:
+    with path.open("rb") as source:
+        data = source.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise ValueError(f"{label} exceeds configured byte limit")
+    return data
+
+
 def export_repro_archive(
     bundle_path: Path,
     archive_path: Path,
@@ -44,10 +52,10 @@ def export_repro_archive(
 ) -> Path:
     """Export one validated repro bundle as a deterministic portable ZIP.
 
-    The archive contains exactly the existing ``input.bin`` and
-    ``manifest.json`` bytes. ZIP_STORED plus fixed member metadata keeps equal
-    bundles byte-for-byte reproducible across export locations while avoiding
-    decompression bombs on the supported import path.
+    The archive contains exactly one bounded snapshot of ``input.bin`` and
+    ``manifest.json`` that has been validated together. ZIP_STORED plus fixed
+    member metadata keeps equal bundles byte-for-byte reproducible across export
+    locations while avoiding decompression bombs on the supported import path.
     """
 
     bundle_path = Path(bundle_path)
@@ -55,28 +63,46 @@ def export_repro_archive(
     if archive_path.exists():
         raise FileExistsError(f"repro archive destination already exists: {archive_path}")
 
-    load_repro_bundle(
+    loaded = load_repro_bundle(
         bundle_path,
         max_input_bytes=max_input_bytes,
         max_manifest_bytes=max_manifest_bytes,
     )
-    manifest = (bundle_path / "manifest.json").read_bytes()
-    input_bytes = (bundle_path / "input.bin").read_bytes()
+    manifest = _read_bounded_bytes(
+        bundle_path / "manifest.json",
+        max_bytes=max_manifest_bytes,
+        label="repro manifest",
+    )
 
     archive_path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with zipfile.ZipFile(
-            archive_path,
-            mode="x",
-            compression=zipfile.ZIP_STORED,
-            allowZip64=False,
-        ) as archive:
-            archive.writestr(_regular_zip_info("input.bin"), input_bytes)
-            archive.writestr(_regular_zip_info("manifest.json"), manifest)
-    except BaseException:
-        if archive_path.exists():
-            archive_path.unlink()
-        raise
+    with tempfile.TemporaryDirectory(
+        prefix=f".{archive_path.name}.snapshot-",
+        dir=archive_path.parent,
+    ) as snapshot_dir:
+        snapshot = Path(snapshot_dir)
+        (snapshot / "input.bin").write_bytes(loaded.input_bytes)
+        (snapshot / "manifest.json").write_bytes(manifest)
+        load_repro_bundle(
+            snapshot,
+            max_input_bytes=max_input_bytes,
+            max_manifest_bytes=max_manifest_bytes,
+        )
+        input_bytes = (snapshot / "input.bin").read_bytes()
+        manifest = (snapshot / "manifest.json").read_bytes()
+
+        try:
+            with zipfile.ZipFile(
+                archive_path,
+                mode="x",
+                compression=zipfile.ZIP_STORED,
+                allowZip64=False,
+            ) as archive:
+                archive.writestr(_regular_zip_info("input.bin"), input_bytes)
+                archive.writestr(_regular_zip_info("manifest.json"), manifest)
+        except BaseException:
+            if archive_path.exists():
+                archive_path.unlink()
+            raise
 
     return archive_path
 
