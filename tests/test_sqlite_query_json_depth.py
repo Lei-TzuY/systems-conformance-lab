@@ -18,7 +18,7 @@ def _execute(case: bytes, *, depth: int):
 
 
 def test_query_target_rejects_json_before_decoder_depth_is_exceeded() -> None:
-    case = b'[' * 40 + b'0' + b']' * 40
+    case = b"[" * 40 + b"0" + b"]" * 40
 
     result = _execute(case, depth=8)
 
@@ -30,11 +30,11 @@ def test_query_target_rejects_json_before_decoder_depth_is_exceeded() -> None:
 
 def test_query_target_ignores_delimiters_inside_json_strings() -> None:
     case = json.dumps(
-        {"setup": [], "query": "SELECT ?", "params": ["[[[{{{\\\"}}}]]]" ]},
+        {"setup": [], "query": "SELECT ?", "params": ["[[[{{{\\\"}}}]]]"]},
         separators=(",", ":"),
     ).encode()
 
-    result = _execute(case, depth=3)
+    result = _execute(case, depth=2)
 
     assert result.infrastructure_error is None
     assert result.exit_code == 0
@@ -48,8 +48,8 @@ def test_query_target_rejects_invalid_json_depth_configuration() -> None:
 
 
 def test_real_harness_observes_query_json_depth_configuration() -> None:
-    candidate = SQLiteQueryTarget(max_json_depth=3).as_command_target()
-    oracle = SQLiteQueryTarget(max_json_depth=2).as_command_target()
+    candidate = SQLiteQueryTarget(max_json_depth=2).as_command_target()
+    oracle = SQLiteQueryTarget(max_json_depth=1).as_command_target()
     harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
     case = json.dumps(
         {"setup": [], "query": "SELECT ?", "params": [7]}, separators=(",", ":")
@@ -62,7 +62,7 @@ def test_real_harness_observes_query_json_depth_configuration() -> None:
     assert run.candidate.exit_code == 0
     assert json.loads(run.candidate.stdout.text)["rows"] == [[7]]
     assert run.oracle.exit_code == 2
-    assert run.oracle.stderr.text.strip() == "protocol_error: request exceeds max_json_depth: 2"
+    assert run.oracle.stderr.text.strip() == "protocol_error: request exceeds max_json_depth: 1"
     assert run.comparison.classification == "product_mismatch"
     assert run.signature is not None
     assert run.signature.kind == "product_mismatch"
