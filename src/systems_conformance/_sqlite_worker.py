@@ -63,6 +63,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     faults.add_argument("--enable-faults", action="store_true")
     faults.add_argument("--disable-faults", action="store_true")
     parser.add_argument("--max-sql-bytes", required=True, type=_positive_int)
+    parser.add_argument("--max-result-columns", required=True, type=_positive_int)
     parser.add_argument("--max-result-rows", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
     return parser.parse_args(argv)
@@ -201,6 +202,7 @@ def _run(
     foreign_keys: bool,
     enable_faults: bool,
     max_sql_bytes: int,
+    max_result_columns: int,
     max_result_rows: int,
     max_vm_steps: int | None,
 ) -> bytes:
@@ -220,7 +222,14 @@ def _run(
                 connection.execute(statement)
             _checkpoint(controller, "query")
             cursor = connection.execute(query, params)
-            columns = [] if cursor.description is None else [item[0] for item in cursor.description]
+            if cursor.description is None:
+                columns = []
+            else:
+                if len(cursor.description) > max_result_columns:
+                    raise ValueError(
+                        f"result exceeds max_result_columns: {max_result_columns}"
+                    )
+                columns = [item[0] for item in cursor.description]
             rows = _collect_rows(cursor, max_result_rows=max_result_rows)
         except sqlite3.Error as exc:
             if budget is not None and budget.exhausted:
@@ -243,6 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             foreign_keys=args.foreign_keys,
             enable_faults=args.enable_faults,
             max_sql_bytes=args.max_sql_bytes,
+            max_result_columns=args.max_result_columns,
             max_result_rows=args.max_result_rows,
             max_vm_steps=args.max_vm_steps,
         )
