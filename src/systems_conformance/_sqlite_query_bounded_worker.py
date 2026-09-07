@@ -40,13 +40,14 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
 
 def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, int, int, int, int, list[str]]:
+) -> tuple[int, int, int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-value-bytes", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-bytes", required=True, type=worker._positive_int)
     parser.add_argument("--max-params", required=True, type=worker._positive_int)
     parser.add_argument("--max-param-value-bytes", required=True, type=worker._positive_int)
+    parser.add_argument("--max-param-bytes", required=True, type=worker._positive_int)
     args, remaining = parser.parse_known_args(argv)
     return (
         args.max_json_depth,
@@ -54,6 +55,7 @@ def _parse_resource_args(
         args.max_result_bytes,
         args.max_params,
         args.max_param_value_bytes,
+        args.max_param_bytes,
         remaining,
     )
 
@@ -65,6 +67,7 @@ def _bounded_decode_request(
     max_setup_statements: int,
     max_params: int,
     max_param_value_bytes: int,
+    max_param_bytes: int,
 ) -> tuple[list[str], str, list[Any], worker.FaultSpec | None]:
     setup, query, params, fault = _ORIGINAL_DECODE_REQUEST(
         raw,
@@ -73,11 +76,18 @@ def _bounded_decode_request(
     )
     if len(params) > max_params:
         raise worker.ProtocolError(f"params exceeds max_params: {max_params}")
+    used_param_bytes = 0
     for value in params:
-        if isinstance(value, str) and len(value.encode("utf-8")) > max_param_value_bytes:
+        if not isinstance(value, str):
+            continue
+        value_bytes = len(value.encode("utf-8"))
+        if value_bytes > max_param_value_bytes:
             raise worker.ProtocolError(
                 f"param value exceeds max_param_value_bytes: {max_param_value_bytes}"
             )
+        if used_param_bytes + value_bytes > max_param_bytes:
+            raise worker.ProtocolError(f"params exceed max_param_bytes: {max_param_bytes}")
+        used_param_bytes += value_bytes
     return setup, query, params, fault
 
 
@@ -135,6 +145,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_result_bytes,
         max_params,
         max_param_value_bytes,
+        max_param_bytes,
         worker_argv,
     ) = _parse_resource_args(argv)
     raw = sys.stdin.buffer.read()
@@ -162,6 +173,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_setup_statements=max_setup_statements,
         max_params=max_params,
         max_param_value_bytes=max_param_value_bytes,
+        max_param_bytes=max_param_bytes,
     )
     try:
         return worker.main(worker_argv)
