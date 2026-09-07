@@ -38,24 +38,33 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
             depth -= 1
 
 
-def _parse_resource_args(argv: Sequence[str] | None) -> tuple[int, int, int, int, list[str]]:
+def _parse_resource_args(
+    argv: Sequence[str] | None,
+) -> tuple[int, int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-value-bytes", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-bytes", required=True, type=worker._positive_int)
     parser.add_argument("--max-params", required=True, type=worker._positive_int)
+    parser.add_argument("--max-param-value-bytes", required=True, type=worker._positive_int)
     args, remaining = parser.parse_known_args(argv)
     return (
         args.max_json_depth,
         args.max_result_value_bytes,
         args.max_result_bytes,
         args.max_params,
+        args.max_param_value_bytes,
         remaining,
     )
 
 
 def _bounded_decode_request(
-    raw: bytes, *, max_sql_bytes: int, max_setup_statements: int, max_params: int
+    raw: bytes,
+    *,
+    max_sql_bytes: int,
+    max_setup_statements: int,
+    max_params: int,
+    max_param_value_bytes: int,
 ) -> tuple[list[str], str, list[Any], worker.FaultSpec | None]:
     setup, query, params, fault = _ORIGINAL_DECODE_REQUEST(
         raw,
@@ -64,6 +73,11 @@ def _bounded_decode_request(
     )
     if len(params) > max_params:
         raise worker.ProtocolError(f"params exceeds max_params: {max_params}")
+    for value in params:
+        if isinstance(value, str) and len(value.encode("utf-8")) > max_param_value_bytes:
+            raise worker.ProtocolError(
+                f"param value exceeds max_param_value_bytes: {max_param_value_bytes}"
+            )
     return setup, query, params, fault
 
 
@@ -80,7 +94,14 @@ def _bounded_normalize(value: Any, *, max_result_value_bytes: int) -> Any:
 
 
 def _serialized_json_size(value: Any) -> int:
-    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+    return len(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    )
 
 
 def _bounded_collect_rows(
@@ -108,7 +129,14 @@ def _bounded_collect_rows(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    max_json_depth, max_result_value_bytes, max_result_bytes, max_params, worker_argv = _parse_resource_args(argv)
+    (
+        max_json_depth,
+        max_result_value_bytes,
+        max_result_bytes,
+        max_params,
+        max_param_value_bytes,
+        worker_argv,
+    ) = _parse_resource_args(argv)
     raw = sys.stdin.buffer.read()
     try:
         _validate_json_depth(raw, max_json_depth=max_json_depth)
@@ -122,7 +150,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     original_collect_rows = worker._collect_rows
     original_decode_request = worker._decode_request
     sys.stdin = replay_stdin
-    worker._normalize = lambda value: _bounded_normalize(value, max_result_value_bytes=max_result_value_bytes)
+    worker._normalize = lambda value: _bounded_normalize(
+        value, max_result_value_bytes=max_result_value_bytes
+    )
     worker._collect_rows = lambda cursor, *, max_result_rows: _bounded_collect_rows(
         cursor, max_result_rows=max_result_rows, max_result_bytes=max_result_bytes
     )
@@ -131,6 +161,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_sql_bytes=max_sql_bytes,
         max_setup_statements=max_setup_statements,
         max_params=max_params,
+        max_param_value_bytes=max_param_value_bytes,
     )
     try:
         return worker.main(worker_argv)
