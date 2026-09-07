@@ -63,6 +63,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     faults.add_argument("--enable-faults", action="store_true")
     faults.add_argument("--disable-faults", action="store_true")
     parser.add_argument("--max-sql-bytes", required=True, type=_positive_int)
+    parser.add_argument("--max-setup-statements", required=True, type=_positive_int)
     parser.add_argument("--max-result-columns", required=True, type=_positive_int)
     parser.add_argument("--max-result-rows", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
@@ -111,7 +112,7 @@ def _validate_sql(sql: Any, *, field: str, max_sql_bytes: int) -> str:
 
 
 def _decode_request(
-    raw: bytes, *, max_sql_bytes: int
+    raw: bytes, *, max_sql_bytes: int, max_setup_statements: int
 ) -> tuple[list[str], str, list[Any], FaultSpec | None]:
     try:
         payload = json.loads(
@@ -132,6 +133,8 @@ def _decode_request(
     fault = _decode_fault(payload.get("fault"))
     if not isinstance(setup, list) or not all(isinstance(item, str) for item in setup):
         raise ProtocolError("setup must be a list of SQL strings")
+    if len(setup) > max_setup_statements:
+        raise ProtocolError(f"setup exceeds max_setup_statements: {max_setup_statements}")
     setup = [
         _validate_sql(statement, field="setup statement", max_sql_bytes=max_sql_bytes)
         for statement in setup
@@ -202,11 +205,16 @@ def _run(
     foreign_keys: bool,
     enable_faults: bool,
     max_sql_bytes: int,
+    max_setup_statements: int,
     max_result_columns: int,
     max_result_rows: int,
     max_vm_steps: int | None,
 ) -> bytes:
-    setup, query, params, fault = _decode_request(raw, max_sql_bytes=max_sql_bytes)
+    setup, query, params, fault = _decode_request(
+        raw,
+        max_sql_bytes=max_sql_bytes,
+        max_setup_statements=max_setup_statements,
+    )
     controller = FaultController(fault) if enable_faults and fault is not None else None
     budget = _VmBudget(max_vm_steps) if max_vm_steps is not None else None
     connection = sqlite3.connect(":memory:")
@@ -252,6 +260,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             foreign_keys=args.foreign_keys,
             enable_faults=args.enable_faults,
             max_sql_bytes=args.max_sql_bytes,
+            max_setup_statements=args.max_setup_statements,
             max_result_columns=args.max_result_columns,
             max_result_rows=args.max_result_rows,
             max_vm_steps=args.max_vm_steps,
