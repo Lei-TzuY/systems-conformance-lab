@@ -9,6 +9,7 @@ from typing import Any
 
 from . import _sqlite_transaction_worker as worker
 
+_ORIGINAL_VALIDATE_SQL = worker._validate_sql
 _ORIGINAL_DECODE_STATEMENT = worker._decode_statement
 _ORIGINAL_EXECUTE_STATEMENT = worker._execute_statement
 
@@ -41,9 +42,10 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
 
 def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, int, int, int, int, int, int, int, int, list[str]]:
+) -> tuple[int, int, int, int, int, int, int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
+    parser.add_argument("--max-total-sql-bytes", required=True, type=worker._positive_int)
     parser.add_argument("--max-params", required=True, type=worker._positive_int)
     parser.add_argument(
         "--max-param-value-bytes", required=True, type=worker._positive_int
@@ -61,6 +63,7 @@ def _parse_resource_args(
     args, remaining = parser.parse_known_args(argv)
     return (
         args.max_json_depth,
+        args.max_total_sql_bytes,
         args.max_params,
         args.max_param_value_bytes,
         args.max_param_bytes,
@@ -174,6 +177,7 @@ def _bounded_execute_statement(
 def main(argv: Sequence[str] | None = None) -> int:
     (
         max_json_depth,
+        max_total_sql_bytes,
         max_params,
         max_param_value_bytes,
         max_param_bytes,
@@ -193,9 +197,25 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     replay_stdin = io.TextIOWrapper(io.BytesIO(raw), encoding="utf-8")
     original_stdin = sys.stdin
+    original_validate_sql = worker._validate_sql
     original_decode_statement = worker._decode_statement
     original_execute_statement = worker._execute_statement
+    total_sql_bytes = 0
     transcript_result_bytes = 0
+
+    def bounded_validate_sql(sql: Any, *, field: str, max_sql_bytes: int) -> str:
+        nonlocal total_sql_bytes
+        validated = _ORIGINAL_VALIDATE_SQL(
+            sql,
+            field=field,
+            max_sql_bytes=max_sql_bytes,
+        )
+        total_sql_bytes += len(validated.encode("utf-8"))
+        if total_sql_bytes > max_total_sql_bytes:
+            raise worker.ProtocolError(
+                f"request SQL exceeds max_total_sql_bytes: {max_total_sql_bytes}"
+            )
+        return validated
 
     def bounded_decode(value: Any, *, field: str, max_sql_bytes: int) -> Any:
         return _bounded_decode_statement(
@@ -227,11 +247,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         return result
 
     sys.stdin = replay_stdin
+    worker._validate_sql = bounded_validate_sql
     worker._decode_statement = bounded_decode
     worker._execute_statement = bounded_execute
     try:
         return worker.main(worker_argv)
     finally:
+        worker._validate_sql = original_validate_sql
         worker._decode_statement = original_decode_statement
         worker._execute_statement = original_execute_statement
         sys.stdin = original_stdin
