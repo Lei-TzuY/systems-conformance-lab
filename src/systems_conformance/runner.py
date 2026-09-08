@@ -119,7 +119,7 @@ def _validate_timeout_seconds(timeout_seconds: float) -> None:
     if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
         raise TypeError("timeout_seconds must be a finite positive number")
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise ValueError("timeout_seconds must be a finite positive number")
+        raise ValueError("timeout_seconds must be finite and positive")
 
 
 def _validate_byte_limit(name: str, value: int, *, allow_zero: bool) -> None:
