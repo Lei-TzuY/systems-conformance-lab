@@ -132,17 +132,17 @@ class DifferentialHarness:
         if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be finite and positive")
         if isinstance(self.max_input_bytes, bool) or not isinstance(self.max_input_bytes, int):
-            raise ValueError("max_input_bytes must be a non-negative integer")
+            raise TypeError("max_input_bytes must be a non-negative integer")
         if self.max_input_bytes < 0:
             raise ValueError("max_input_bytes must be a non-negative integer")
         if isinstance(self.max_output_bytes, bool) or not isinstance(self.max_output_bytes, int):
-            raise ValueError("max_output_bytes must be a non-negative integer")
+            raise TypeError("max_output_bytes must be a non-negative integer")
         if self.max_output_bytes < 0:
             raise ValueError("max_output_bytes must be a non-negative integer")
         if isinstance(self.max_total_output_bytes, bool) or not isinstance(
             self.max_total_output_bytes, int
         ):
-            raise ValueError("max_total_output_bytes must be a positive integer")
+            raise TypeError("max_total_output_bytes must be a positive integer")
         if self.max_total_output_bytes <= 0:
             raise ValueError("max_total_output_bytes must be a positive integer")
 
