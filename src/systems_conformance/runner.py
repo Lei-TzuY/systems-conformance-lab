@@ -116,11 +116,10 @@ def _join_io_threads(threads: Sequence[threading.Thread], timeout: float) -> boo
 
 
 def _validate_byte_limit(name: str, value: int, *, allow_zero: bool) -> None:
+    qualifier = "non-negative" if allow_zero else "positive"
     if isinstance(value, bool) or not isinstance(value, int):
-        qualifier = "non-negative" if allow_zero else "positive"
-        raise ValueError(f"{name} must be a {qualifier} integer")
+        raise TypeError(f"{name} must be a {qualifier} integer")
     if value < 0 or (not allow_zero and value == 0):
-        qualifier = "non-negative" if allow_zero else "positive"
         raise ValueError(f"{name} must be a {qualifier} integer")
 
 
