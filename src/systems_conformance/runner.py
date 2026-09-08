@@ -115,6 +115,13 @@ def _join_io_threads(threads: Sequence[threading.Thread], timeout: float) -> boo
     return all(not thread.is_alive() for thread in threads)
 
 
+def _validate_timeout_seconds(timeout_seconds: float) -> None:
+    if isinstance(timeout_seconds, bool) or not isinstance(timeout_seconds, (int, float)):
+        raise TypeError("timeout_seconds must be a finite positive number")
+    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
+        raise ValueError("timeout_seconds must be a finite positive number")
+
+
 def _validate_byte_limit(name: str, value: int, *, allow_zero: bool) -> None:
     qualifier = "non-negative" if allow_zero else "positive"
     if isinstance(value, bool) or not isinstance(value, int):
@@ -145,12 +152,12 @@ def run_process(
     classified as infrastructure failures rather than allowing reader threads to hang forever.
     OS- and runtime-level spawn failures, including invalid argv/environment encodings, are
     returned as structured infrastructure errors instead of escaping the execution pipeline.
-    Byte ceilings are exact non-bool integers and are validated before process launch.
+    Timeout and byte ceilings are validated before process launch; booleans are never accepted
+    as numeric execution limits.
     """
     if not argv:
         raise ValueError("argv must contain at least one element")
-    if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
-        raise ValueError("timeout_seconds must be finite and positive")
+    _validate_timeout_seconds(timeout_seconds)
     _validate_byte_limit("max_input_bytes", max_input_bytes, allow_zero=True)
     if len(stdin) > max_input_bytes:
         raise ValueError(f"stdin exceeds max_input_bytes ({len(stdin)} > {max_input_bytes})")
