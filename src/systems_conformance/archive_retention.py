@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -63,7 +64,7 @@ def enforce_repro_archive_retention(
                     max_manifest_bytes=max_manifest_bytes,
                     max_archive_bytes=max_archive_bytes,
                 )
-            except (OSError, UnicodeError, TypeError, ValueError):
+            except (OSError, UnicodeError, TypeError, ValueError, zipfile.BadZipFile):
                 ignored.append(child)
                 continue
             eligible.append((mtime_ns, child.name, child))
