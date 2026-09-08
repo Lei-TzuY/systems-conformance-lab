@@ -116,6 +116,29 @@ def test_post_exit_descendant_pipe_leak_is_bounded() -> None:
     assert result.stdout.text == f"root done{os.linesep}"
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group cleanup contract")
+def test_post_exit_descendant_cannot_escape_by_detaching_stdio(tmp_path: Path) -> None:
+    marker = tmp_path / "escaped"
+    child = (
+        "import pathlib, sys, time; "
+        "time.sleep(0.35); pathlib.Path(sys.argv[1]).write_text('escaped')"
+    )
+    root = (
+        "import subprocess, sys; "
+        "subprocess.Popen([sys.executable, '-c', sys.argv[1], sys.argv[2]], "
+        "stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)"
+    )
+
+    result = run_process(python(root, child, str(marker)), timeout_seconds=2)
+
+    assert result.exit_code == 0
+    assert result.timed_out is False
+    assert result.infrastructure_error is not None
+    assert result.infrastructure_error.startswith("ProcessTreeLeak:")
+    time.sleep(0.5)
+    assert not marker.exists()
+
+
 def test_missing_executable_is_infrastructure_error() -> None:
     result = run_process(["definitely-not-a-real-systems-conformance-command"])
     assert result.exit_code is None
