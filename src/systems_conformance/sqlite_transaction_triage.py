@@ -56,7 +56,8 @@ def reduce_sqlite_transaction_failure_to_repro(
     if captured_signature is None or captured_signature != failure.signature:
         raise ValueError("fuzz failure carries an inconsistent stable signature")
 
-    preserves = lambda case: harness.preserves_failure(case, failure.signature)
+    def preserves(case: bytes) -> bool:
+        return harness.preserves_failure(case, failure.signature)
 
     statement_reduction = reduce_case(
         failure.case,
