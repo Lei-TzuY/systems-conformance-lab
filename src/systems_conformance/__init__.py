@@ -23,6 +23,7 @@ from .repro_archive import export_repro_archive, import_repro_archive
 from .retention import RetentionResult, enforce_repro_retention
 from .runner import run_process
 from .sqlite_adapter import SQLiteQueryTarget
+from .sqlite_query_feedback import SQLiteQueryFeedbackEvaluator, sqlite_query_feedback_features
 from .sqlite_query_fuzz import SQLiteQueryParameterMutations
 from .sqlite_query_reducer import (
     sqlite_query_fault_occurrence_complexity,
@@ -67,6 +68,7 @@ __all__ = [
     "ReproBundle",
     "ReproReplay",
     "RetentionResult",
+    "SQLiteQueryFeedbackEvaluator",
     "SQLiteQueryParameterMutations",
     "SQLiteQueryTarget",
     "SQLiteTransactionParameterMutations",
@@ -87,6 +89,7 @@ __all__ = [
     "run_process",
     "sqlite_query_fault_occurrence_complexity",
     "sqlite_query_fault_occurrence_reductions",
+    "sqlite_query_feedback_features",
     "sqlite_query_parameter_complexity",
     "sqlite_query_parameter_reductions",
     "sqlite_query_setup_statement_count",
