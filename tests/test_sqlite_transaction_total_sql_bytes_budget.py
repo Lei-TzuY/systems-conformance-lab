@@ -7,7 +7,6 @@ import pytest
 from systems_conformance import DifferentialHarness
 from systems_conformance.sqlite_transaction_adapter import SQLiteTransactionTarget
 
-
 _SETUP = "CREATE TABLE t(x)"
 _TRANSACTION = "INSERT INTO t VALUES (1)"
 _OBSERVE = "SELECT x FROM t"
