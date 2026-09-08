@@ -23,6 +23,14 @@ from .repro_archive import export_repro_archive, import_repro_archive
 from .retention import RetentionResult, enforce_repro_retention
 from .runner import run_process
 from .sqlite_adapter import SQLiteQueryTarget
+from .sqlite_query_reducer import (
+    sqlite_query_fault_occurrence_complexity,
+    sqlite_query_fault_occurrence_reductions,
+    sqlite_query_parameter_complexity,
+    sqlite_query_parameter_reductions,
+    sqlite_query_setup_statement_count,
+    sqlite_query_setup_statement_deletions,
+)
 from .sqlite_transaction_adapter import SQLiteTransactionTarget
 from .sqlite_transaction_fuzz import SQLiteTransactionParameterMutations
 from .sqlite_transaction_reducer import (
@@ -75,6 +83,12 @@ __all__ = [
     "run_feedback_guided_campaign",
     "run_fuzz_campaign",
     "run_process",
+    "sqlite_query_fault_occurrence_complexity",
+    "sqlite_query_fault_occurrence_reductions",
+    "sqlite_query_parameter_complexity",
+    "sqlite_query_parameter_reductions",
+    "sqlite_query_setup_statement_count",
+    "sqlite_query_setup_statement_deletions",
     "sqlite_transaction_fault_occurrence_complexity",
     "sqlite_transaction_fault_occurrence_reductions",
     "sqlite_transaction_parameter_complexity",
