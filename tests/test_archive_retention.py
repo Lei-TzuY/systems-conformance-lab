@@ -5,10 +5,10 @@ import zipfile
 
 import pytest
 
-import systems_conformance.archive_retention as archive_retention
 from systems_conformance import (
     CommandTarget,
     DifferentialHarness,
+    archive_retention,
     enforce_repro_archive_retention,
     export_repro_archive,
     replay_repro_archive,
