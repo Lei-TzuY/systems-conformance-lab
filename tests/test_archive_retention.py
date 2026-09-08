@@ -36,7 +36,8 @@ def test_archive_retention_keeps_newest_valid_archives_and_replays_real_target(t
             metadata={"index": index},
         )
         archive = export_repro_archive(repro.path, archive_root / f"case-{index}.zip")
-        os.utime(archive, ns=(index + 1, index + 1))
+        timestamp = 1_700_000_000 + index
+        os.utime(archive, times=(timestamp, timestamp))
         archives.append(archive)
 
     malformed = archive_root / "malformed.zip"
