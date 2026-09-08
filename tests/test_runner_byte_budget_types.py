@@ -33,7 +33,7 @@ def test_run_process_rejects_noninteger_byte_budgets_before_launch(
 ) -> None:
     marker = tmp_path / "launched.txt"
 
-    with pytest.raises(ValueError, match=f"{limit_name} must be"):
+    with pytest.raises(TypeError, match=f"{limit_name} must be"):
         run_process(marker_command(marker), **{limit_name: invalid_value})
 
     assert not marker.exists()
@@ -55,7 +55,7 @@ def test_harness_rejects_noninteger_byte_budgets_before_context_or_execution(
 ) -> None:
     command = CommandTarget((sys.executable, "-c", "pass"))
 
-    with pytest.raises(ValueError, match=f"{limit_name} must be"):
+    with pytest.raises(TypeError, match=f"{limit_name} must be"):
         DifferentialHarness(
             candidate=command,
             oracle=command,
