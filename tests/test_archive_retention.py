@@ -8,6 +8,7 @@ import pytest
 from systems_conformance import (
     CommandTarget,
     DifferentialHarness,
+    archive_retention,
     enforce_repro_archive_retention,
     export_repro_archive,
     replay_repro_archive,
@@ -209,6 +210,58 @@ def test_archive_retention_evidence_rejects_post_retention_path_replacement_befo
         )
 
     assert not marker.exists()
+
+
+def test_archive_retention_refuses_to_delete_replaced_removal_candidate(
+    tmp_path, monkeypatch
+) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    root = tmp_path / "archives"
+    root.mkdir()
+    old_archive = export_repro_archive(
+        harness.write_repro(tmp_path / "old-repro", input_bytes=b"BUG-old").path,
+        root / "old.zip",
+    )
+    keep_archive = export_repro_archive(
+        harness.write_repro(tmp_path / "keep-repro", input_bytes=b"BUG-keep").path,
+        root / "keep.zip",
+    )
+    replacement = export_repro_archive(
+        harness.write_repro(
+            tmp_path / "replacement-delete-repro", input_bytes=b"BUG-replacement"
+        ).path,
+        tmp_path / "replacement-delete.zip",
+    )
+    os.utime(old_archive, times=(1_700_300_000, 1_700_300_000))
+    os.utime(keep_archive, times=(1_700_300_001, 1_700_300_001))
+    replacement_bytes = replacement.read_bytes()
+    real_current_identity = archive_retention._current_file_identity
+    replaced = False
+
+    def replace_before_delete_identity(path):
+        nonlocal replaced
+        if path == old_archive and not replaced:
+            path.write_bytes(replacement_bytes)
+            replaced = True
+        return real_current_identity(path)
+
+    monkeypatch.setattr(
+        archive_retention, "_current_file_identity", replace_before_delete_identity
+    )
+
+    result = enforce_repro_archive_retention(root, max_archives=1)
+
+    assert replaced
+    assert result.kept == (keep_archive,)
+    assert result.removed == ()
+    assert result.ignored == (old_archive,)
+    assert old_archive.read_bytes() == replacement_bytes
+    assert replay_repro_archive(
+        harness,
+        old_archive,
+        expected_archive_sha256=hashlib.sha256(replacement_bytes).hexdigest(),
+        require_reproduction=True,
+    ).reproduced
 
 
 def test_archive_retention_tie_breaks_by_filename_and_ignores_symlinks(tmp_path) -> None:
