@@ -1,3 +1,4 @@
+from .archive_replay import ArchiveReproReplay, replay_repro_archive
 from .byte_fuzz import DeterministicByteMutations
 from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
@@ -59,6 +60,7 @@ from .triage import ReducedFailureRepro, reduce_failure_to_repro
 from .write_fault import FaultingBinaryWriter
 
 __all__ = [
+    "ArchiveReproReplay",
     "CommandTarget",
     "ComparisonResult",
     "DeterministicByteMutations",
@@ -100,6 +102,7 @@ __all__ = [
     "reduce_failure_to_repro",
     "reduce_sqlite_query_failure_to_repro",
     "reduce_sqlite_transaction_failure_to_repro",
+    "replay_repro_archive",
     "run_failure_discovery_campaign",
     "run_feedback_guided_campaign",
     "run_fuzz_campaign",
