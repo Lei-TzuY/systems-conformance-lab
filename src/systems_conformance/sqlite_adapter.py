@@ -55,6 +55,10 @@ class SQLiteQueryTarget:
     max_vm_steps: int | None = None
 
     def __post_init__(self) -> None:
+        if not isinstance(self.foreign_keys, bool):
+            raise TypeError("foreign_keys must be a bool")
+        if not isinstance(self.enable_faults, bool):
+            raise TypeError("enable_faults must be a bool")
         for name, value in (
             ("max_sql_bytes", self.max_sql_bytes),
             ("max_json_depth", self.max_json_depth),

@@ -65,6 +65,8 @@ class SQLiteTransactionTarget:
     def __post_init__(self) -> None:
         if self.finalize not in {"commit", "rollback"}:
             raise ValueError("finalize must be 'commit' or 'rollback'")
+        if not isinstance(self.foreign_keys, bool):
+            raise TypeError("foreign_keys must be a bool")
         if not isinstance(self.enable_faults, bool):
             raise TypeError("enable_faults must be a bool")
         if not isinstance(self.reopen_before_observe, bool):
