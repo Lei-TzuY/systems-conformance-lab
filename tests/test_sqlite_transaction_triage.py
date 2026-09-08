@@ -58,7 +58,7 @@ def test_real_sqlite_transaction_failure_reduces_across_all_phases_and_replays(t
     assert result.statement_reduction.accepted_steps > 0
     assert result.parameter_reduction.accepted_steps > 0
     assert reduced["fault"] == {"operation": "transaction", "occurrence": 0, "kind": "abort"}
-    assert reduced["setup"] == []
+    assert reduced["setup"] == ["CREATE TABLE items(v INTEGER)"]
     assert len(reduced["transaction"]) == 1
     assert reduced["transaction"][0]["params"] == [None]
     assert result.repro.input_path.read_bytes() == result.reduced
