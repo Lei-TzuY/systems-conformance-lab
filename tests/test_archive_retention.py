@@ -17,6 +17,7 @@ BUGGY_SCRIPT = (
     "import sys; data=sys.stdin.buffer.read(); "
     "sys.stdout.buffer.write(data.replace(b'BUG', b'BAD') if b'BUG' in data else data)"
 )
+EXIT_SCRIPT = "import sys; sys.stdin.buffer.read(); raise SystemExit(3)"
 
 
 def target(script: str) -> CommandTarget:
@@ -96,6 +97,54 @@ def test_archive_retention_total_byte_budget_is_greedy_and_replayable(tmp_path) 
         assert replay.reproduced
 
 
+def test_archive_retention_preserves_distinct_failure_signatures_before_duplicates(
+    tmp_path,
+) -> None:
+    mismatch_harness = DifferentialHarness(
+        candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT)
+    )
+    exit_harness = DifferentialHarness(
+        candidate=target(EXIT_SCRIPT), oracle=target(ECHO_SCRIPT)
+    )
+    root = tmp_path / "archives"
+    root.mkdir()
+
+    unique_old = export_repro_archive(
+        exit_harness.write_repro(tmp_path / "exit-repro", input_bytes=b"BUG-old").path,
+        root / "unique-old.zip",
+    )
+    duplicate_middle = export_repro_archive(
+        mismatch_harness.write_repro(
+            tmp_path / "mismatch-middle", input_bytes=b"BUG-middle"
+        ).path,
+        root / "duplicate-middle.zip",
+    )
+    duplicate_new = export_repro_archive(
+        mismatch_harness.write_repro(
+            tmp_path / "mismatch-new", input_bytes=b"BUG-new"
+        ).path,
+        root / "duplicate-new.zip",
+    )
+    for index, archive in enumerate((unique_old, duplicate_middle, duplicate_new)):
+        timestamp = 1_700_200_000 + index
+        os.utime(archive, times=(timestamp, timestamp))
+
+    result = enforce_repro_archive_retention(
+        root,
+        max_archives=2,
+        preserve_unique_failures=True,
+    )
+
+    assert result.kept == (duplicate_new, unique_old)
+    assert result.removed == (duplicate_middle,)
+    assert replay_repro_archive(
+        mismatch_harness, duplicate_new, require_reproduction=True
+    ).reproduced
+    assert replay_repro_archive(
+        exit_harness, unique_old, require_reproduction=True
+    ).reproduced
+
+
 def test_archive_retention_tie_breaks_by_filename_and_ignores_symlinks(tmp_path) -> None:
     harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
     root = tmp_path / "archives"
@@ -132,4 +181,8 @@ def test_archive_retention_validates_limit_type_before_scanning(tmp_path) -> Non
     with pytest.raises(ValueError, match="max_total_archive_bytes must be non-negative"):
         enforce_repro_archive_retention(
             tmp_path, max_archives=1, max_total_archive_bytes=-1
+        )
+    with pytest.raises(TypeError, match="preserve_unique_failures must be a bool"):
+        enforce_repro_archive_retention(
+            tmp_path, max_archives=1, preserve_unique_failures=1
         )
