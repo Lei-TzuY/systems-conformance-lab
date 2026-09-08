@@ -40,7 +40,7 @@ def _validate_json_depth(raw: bytes, *, max_json_depth: int) -> None:
 
 def _parse_resource_args(
     argv: Sequence[str] | None,
-) -> tuple[int, int, int, int, int, int, list[str]]:
+) -> tuple[int, int, int, int, int, int, int, list[str]]:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--max-json-depth", required=True, type=worker._positive_int)
     parser.add_argument("--max-result-value-bytes", required=True, type=worker._positive_int)
@@ -48,6 +48,7 @@ def _parse_resource_args(
     parser.add_argument("--max-params", required=True, type=worker._positive_int)
     parser.add_argument("--max-param-value-bytes", required=True, type=worker._positive_int)
     parser.add_argument("--max-param-bytes", required=True, type=worker._positive_int)
+    parser.add_argument("--max-total-sql-bytes", required=True, type=worker._positive_int)
     args, remaining = parser.parse_known_args(argv)
     return (
         args.max_json_depth,
@@ -56,6 +57,7 @@ def _parse_resource_args(
         args.max_params,
         args.max_param_value_bytes,
         args.max_param_bytes,
+        args.max_total_sql_bytes,
         remaining,
     )
 
@@ -68,12 +70,19 @@ def _bounded_decode_request(
     max_params: int,
     max_param_value_bytes: int,
     max_param_bytes: int,
+    max_total_sql_bytes: int,
 ) -> tuple[list[str], str, list[Any], worker.FaultSpec | None]:
     setup, query, params, fault = _ORIGINAL_DECODE_REQUEST(
         raw,
         max_sql_bytes=max_sql_bytes,
         max_setup_statements=max_setup_statements,
     )
+    total_sql_bytes = sum(len(statement.encode("utf-8")) for statement in setup)
+    total_sql_bytes += len(query.encode("utf-8"))
+    if total_sql_bytes > max_total_sql_bytes:
+        raise worker.ProtocolError(
+            f"request SQL exceeds max_total_sql_bytes: {max_total_sql_bytes}"
+        )
     if len(params) > max_params:
         raise worker.ProtocolError(f"params exceeds max_params: {max_params}")
     used_param_bytes = 0
@@ -146,6 +155,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_params,
         max_param_value_bytes,
         max_param_bytes,
+        max_total_sql_bytes,
         worker_argv,
     ) = _parse_resource_args(argv)
     raw = sys.stdin.buffer.read()
@@ -174,6 +184,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_params=max_params,
         max_param_value_bytes=max_param_value_bytes,
         max_param_bytes=max_param_bytes,
+        max_total_sql_bytes=max_total_sql_bytes,
     )
     try:
         return worker.main(worker_argv)
