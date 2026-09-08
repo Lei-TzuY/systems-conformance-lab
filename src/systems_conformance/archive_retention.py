@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import stat
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -39,6 +41,24 @@ class ArchiveRetentionResult:
     kept_evidence: tuple[ArchiveRetentionEvidence, ...] = ()
 
 
+_FileIdentity = tuple[int, int, int, int, int, int]
+
+
+def _file_identity(stat_result: os.stat_result) -> _FileIdentity:
+    return (
+        stat_result.st_dev,
+        stat_result.st_ino,
+        stat_result.st_mode,
+        stat_result.st_size,
+        stat_result.st_mtime_ns,
+        stat_result.st_ctime_ns,
+    )
+
+
+def _current_file_identity(path: Path) -> _FileIdentity:
+    return _file_identity(path.stat(follow_symlinks=False))
+
+
 def enforce_repro_archive_retention(
     root: Path,
     *,
@@ -61,8 +81,9 @@ def enforce_repro_archive_retention(
     for duplicate signatures. Returned kept evidence binds each retained path to the
     SHA-256 and byte length of the exact immutable transport snapshot that was validated,
     allowing a later replay to fail closed if the retained path has been replaced.
-    Deletion uses ``unlink`` so a path swapped to a symlink after validation is removed
-    as a link, never followed.
+    Before deleting an over-budget archive, retention verifies that the path is still the
+    same regular-file identity observed during validation; detected replacement is
+    reported as ignored instead of deleting unvalidated content.
     """
 
     if isinstance(max_archives, bool) or not isinstance(max_archives, int):
@@ -85,7 +106,7 @@ def enforce_repro_archive_retention(
     if not root.is_dir():
         raise NotADirectoryError(root)
 
-    eligible: list[tuple[int, str, ArchiveRetentionEvidence]] = []
+    eligible: list[tuple[int, str, ArchiveRetentionEvidence, _FileIdentity]] = []
     ignored: list[Path] = []
 
     with tempfile.TemporaryDirectory(prefix="systems-conformance-archive-retention-") as temp:
@@ -95,7 +116,10 @@ def enforce_repro_archive_retention(
                 ignored.append(child)
                 continue
             try:
-                stat_result = child.stat()
+                stat_result = child.stat(follow_symlinks=False)
+                if not stat.S_ISREG(stat_result.st_mode):
+                    ignored.append(child)
+                    continue
                 archive_bytes = _read_bounded_bytes(
                     child,
                     max_bytes=max_archive_bytes,
@@ -128,16 +152,18 @@ def enforce_repro_archive_retention(
                         size_bytes=len(archive_bytes),
                         signature=signature,
                     ),
+                    _file_identity(stat_result),
                 )
             )
 
     eligible.sort(key=lambda item: (-item[0], item[1]))
     kept: list[Path] = []
     kept_evidence: list[ArchiveRetentionEvidence] = []
-    removed: list[Path] = []
+    removal_candidates: list[Path] = []
+    validated_identities = {item[2].path: item[3] for item in eligible}
     kept_bytes = 0
 
-    def retain_if_fits(item: tuple[int, str, ArchiveRetentionEvidence]) -> bool:
+    def retain_if_fits(item: tuple[int, str, ArchiveRetentionEvidence, _FileIdentity]) -> bool:
         nonlocal kept_bytes
         evidence = item[2]
         count_fits = len(kept) < max_archives
@@ -154,7 +180,7 @@ def enforce_repro_archive_retention(
 
     if preserve_unique_failures:
         retained_signatures: set[FailureSignature] = set()
-        duplicates: list[tuple[int, str, ArchiveRetentionEvidence]] = []
+        duplicates: list[tuple[int, str, ArchiveRetentionEvidence, _FileIdentity]] = []
         for item in eligible:
             signature = item[2].signature
             if signature in retained_signatures:
@@ -163,20 +189,34 @@ def enforce_repro_archive_retention(
             if retain_if_fits(item):
                 retained_signatures.add(signature)
             else:
-                removed.append(item[2].path)
+                removal_candidates.append(item[2].path)
         for item in duplicates:
             if not retain_if_fits(item):
-                removed.append(item[2].path)
+                removal_candidates.append(item[2].path)
     else:
         for item in eligible:
             if not retain_if_fits(item):
-                removed.append(item[2].path)
+                removal_candidates.append(item[2].path)
 
-    for path in removed:
+    removed: list[Path] = []
+    for path in removal_candidates:
+        try:
+            current_identity = _current_file_identity(path)
+        except FileNotFoundError:
+            continue
+        except OSError:
+            ignored.append(path)
+            continue
+        if current_identity != validated_identities[path] or not stat.S_ISREG(
+            current_identity[2]
+        ):
+            ignored.append(path)
+            continue
         try:
             path.unlink()
         except FileNotFoundError:
-            pass
+            continue
+        removed.append(path)
 
     return ArchiveRetentionResult(
         kept=tuple(kept),
