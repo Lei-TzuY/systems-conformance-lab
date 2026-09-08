@@ -6,6 +6,8 @@ The archive first traverses `import_repro_archive` inside a private temporary di
 
 Replay-context validation therefore still happens before untrusted `input.bin` executes. A context mismatch fails without launching either candidate or oracle. Invalid archives likewise fail during the archive/bundle validation boundary before target execution.
 
+Callers that use archive replay as a conformance gate can set `require_reproduction=True`. After a valid archive is executed, the fresh run must preserve the archived exact stable `FailureSignature`; otherwise replay raises `RuntimeError` instead of allowing a stale witness to look successful. The gate is independent of `require_same_context`: portability experiments may deliberately replay under a different harness context while still requiring the transported witness to reproduce its archived failure identity.
+
 The private imported directory is removed on success and failure. The returned `ArchiveReproReplay` copies the validated input bytes, stable failure signature, metadata, replay-context digest, and fresh differential run so its evidence remains usable after temporary cleanup; it exposes the original archive path rather than a stale temporary bundle path.
 
 This API is intentionally a transport/replay interoperability slice. It does not weaken `import_repro_archive`, bypass `load_repro_bundle`, create a remote artifact store, or retain temporary extraction trees.
