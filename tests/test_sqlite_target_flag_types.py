@@ -25,7 +25,7 @@ def test_transaction_target_rejects_non_boolean_execution_flags(
 
 def test_valid_query_flags_execute_real_sqlite_worker() -> None:
     request = json.dumps(
-        {"setup": [], "query": "PRAGMA foreign_keys", "params": []},
+        {"setup": [], "query": "SELECT 1", "params": []},
         separators=(",", ":"),
     ).encode()
 
@@ -39,7 +39,7 @@ def test_valid_query_flags_execute_real_sqlite_worker() -> None:
 
     assert result.infrastructure_error is None
     assert result.exit_code == 0
-    assert json.loads(result.stdout.text)["rows"] == [[0]]
+    assert json.loads(result.stdout.text)["rows"] == [[1]]
 
 
 def test_valid_transaction_flags_execute_real_sqlite_worker() -> None:
@@ -47,7 +47,7 @@ def test_valid_transaction_flags_execute_real_sqlite_worker() -> None:
         {
             "setup": [],
             "transaction": [{"sql": "SELECT 1", "params": []}],
-            "observe": {"sql": "PRAGMA foreign_keys", "params": []},
+            "observe": {"sql": "SELECT 2", "params": []},
         },
         separators=(",", ":"),
     ).encode()
@@ -66,4 +66,4 @@ def test_valid_transaction_flags_execute_real_sqlite_worker() -> None:
 
     assert result.infrastructure_error is None
     assert result.exit_code == 0
-    assert json.loads(result.stdout.text)["observation"]["rows"] == [[0]]
+    assert json.loads(result.stdout.text)["observation"]["rows"] == [[2]]
