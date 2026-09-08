@@ -63,6 +63,39 @@ def test_archive_retention_keeps_newest_valid_archives_and_replays_real_target(t
         assert replay.reproduced
 
 
+def test_archive_retention_total_byte_budget_is_greedy_and_replayable(tmp_path) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    root = tmp_path / "archives"
+    root.mkdir()
+    inputs = (b"BUG-old", b"BUG-" + b"x" * 4096, b"BUG-new")
+    archives = []
+
+    for index, input_bytes in enumerate(inputs):
+        repro = harness.write_repro(
+            tmp_path / f"budget-repro-{index}", input_bytes=input_bytes
+        )
+        archive = export_repro_archive(repro.path, root / f"budget-{index}.zip")
+        timestamp = 1_700_100_000 + index
+        os.utime(archive, times=(timestamp, timestamp))
+        archives.append(archive)
+
+    byte_budget = archives[2].stat().st_size + archives[0].stat().st_size
+    assert archives[1].stat().st_size > archives[0].stat().st_size
+
+    result = enforce_repro_archive_retention(
+        root,
+        max_archives=3,
+        max_total_archive_bytes=byte_budget,
+    )
+
+    assert result.kept == (archives[2], archives[0])
+    assert result.removed == (archives[1],)
+    assert sum(path.stat().st_size for path in result.kept) <= byte_budget
+    for archive in result.kept:
+        replay = replay_repro_archive(harness, archive, require_reproduction=True)
+        assert replay.reproduced
+
+
 def test_archive_retention_tie_breaks_by_filename_and_ignores_symlinks(tmp_path) -> None:
     harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
     root = tmp_path / "archives"
@@ -92,3 +125,11 @@ def test_archive_retention_validates_limit_type_before_scanning(tmp_path) -> Non
         enforce_repro_archive_retention(tmp_path, max_archives=True)
     with pytest.raises(ValueError, match="max_archives must be non-negative"):
         enforce_repro_archive_retention(tmp_path, max_archives=-1)
+    with pytest.raises(TypeError, match="max_total_archive_bytes must be an int or None"):
+        enforce_repro_archive_retention(
+            tmp_path, max_archives=1, max_total_archive_bytes=True
+        )
+    with pytest.raises(ValueError, match="max_total_archive_bytes must be non-negative"):
+        enforce_repro_archive_retention(
+            tmp_path, max_archives=1, max_total_archive_bytes=-1
+        )
