@@ -1,4 +1,5 @@
 from .archive_replay import ArchiveReproReplay, replay_repro_archive
+from .archive_retention import ArchiveRetentionResult, enforce_repro_archive_retention
 from .byte_fuzz import DeterministicByteMutations
 from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
@@ -61,6 +62,7 @@ from .write_fault import FaultingBinaryWriter
 
 __all__ = [
     "ArchiveReproReplay",
+    "ArchiveRetentionResult",
     "CommandTarget",
     "ComparisonResult",
     "DeterministicByteMutations",
@@ -92,6 +94,7 @@ __all__ = [
     "SQLiteTransactionTarget",
     "StreamCapture",
     "compare_results",
+    "enforce_repro_archive_retention",
     "enforce_repro_retention",
     "export_repro_archive",
     "failure_signature",
