@@ -33,6 +33,10 @@ from .sqlite_query_reducer import (
     sqlite_query_setup_statement_count,
     sqlite_query_setup_statement_deletions,
 )
+from .sqlite_query_triage import (
+    SQLiteQueryReducedFailureRepro,
+    reduce_sqlite_query_failure_to_repro,
+)
 from .sqlite_transaction_adapter import SQLiteTransactionTarget
 from .sqlite_transaction_feedback import (
     SQLiteTransactionFeedbackEvaluator,
@@ -78,6 +82,7 @@ __all__ = [
     "RetentionResult",
     "SQLiteQueryFeedbackEvaluator",
     "SQLiteQueryParameterMutations",
+    "SQLiteQueryReducedFailureRepro",
     "SQLiteQueryTarget",
     "SQLiteTransactionFeedbackEvaluator",
     "SQLiteTransactionParameterMutations",
@@ -93,6 +98,7 @@ __all__ = [
     "load_repro_bundle",
     "reduce_case",
     "reduce_failure_to_repro",
+    "reduce_sqlite_query_failure_to_repro",
     "reduce_sqlite_transaction_failure_to_repro",
     "run_failure_discovery_campaign",
     "run_feedback_guided_campaign",
