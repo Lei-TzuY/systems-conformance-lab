@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import json
 
-from systems_conformance import DifferentialHarness, FuzzFailure, SQLiteQueryTarget
+from systems_conformance import (
+    DifferentialHarness,
+    FailureSignature,
+    FuzzFailure,
+    SQLiteQueryTarget,
+)
 from systems_conformance.sqlite_query_triage import reduce_sqlite_query_failure_to_repro
 
 
@@ -69,21 +74,11 @@ def test_query_triage_rejects_inconsistent_failure_signature(tmp_path) -> None:
     run = harness.evaluate(initial)
 
     assert run.signature is not None
-    failure = FuzzFailure(
+    inconsistent = FuzzFailure(
         evaluation_index=0,
         case=initial,
         comparison=run.comparison,
-        signature=run.signature,
-    )
-    inconsistent = FuzzFailure(
-        evaluation_index=failure.evaluation_index,
-        case=failure.case,
-        comparison=failure.comparison,
-        signature=type(failure.signature)(
-            classification="execution_mismatch",
-            candidate=failure.signature.candidate,
-            oracle=failure.signature.oracle,
-        ),
+        signature=FailureSignature(kind="product_mismatch", dimensions=("timeout",)),
     )
 
     try:
