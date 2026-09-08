@@ -105,6 +105,18 @@ def _terminate_process_tree(
         process.kill()
 
 
+def _posix_process_group_survives_root(process: subprocess.Popen[bytes]) -> bool:
+    if os.name != "posix":
+        return False
+    try:
+        os.killpg(process.pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def _join_io_threads(threads: Sequence[threading.Thread], timeout: float) -> bool:
     deadline = time.monotonic() + timeout
     for thread in threads:
@@ -148,8 +160,9 @@ def run_process(
     ``max_output_bytes`` from each stream are retained in memory. A separate aggregate
     ``max_total_output_bytes`` budget bounds how much output the untrusted process may emit at
     all; exceeding it terminates the process tree and is classified as an infrastructure error.
-    Descendants that keep inherited stdio pipes open after the root exits are also bounded and
-    classified as infrastructure failures rather than allowing reader threads to hang forever.
+    Descendants that remain in the POSIX target process group after the root exits are killed
+    even if they detached from inherited stdio; descendants that keep inherited stdio open are
+    also bounded and classified as infrastructure failures on every supported platform.
     OS- and runtime-level spawn failures, including invalid argv/environment encodings, are
     returned as structured infrastructure errors instead of escaping the execution pipeline.
     Timeout and byte ceilings are validated before process launch; booleans are never accepted
@@ -247,6 +260,11 @@ def run_process(
         time.sleep(0.005)
 
     process.wait()
+
+    if _posix_process_group_survives_root(process):
+        if infrastructure_error is None and not timed_out:
+            infrastructure_error = "ProcessTreeLeak: descendant remained alive after root exit"
+        _terminate_process_tree(process, root_may_have_exited=True)
 
     if not _join_io_threads(io_threads, _POST_EXIT_DRAIN_SECONDS):
         if infrastructure_error is None and not timed_out:
