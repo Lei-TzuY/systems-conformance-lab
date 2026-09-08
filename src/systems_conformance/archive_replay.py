@@ -42,6 +42,7 @@ def replay_repro_archive(
     max_manifest_bytes: int = DEFAULT_MAX_REPRO_MANIFEST_BYTES,
     max_archive_bytes: int = DEFAULT_MAX_REPRO_ARCHIVE_BYTES,
     require_same_context: bool = True,
+    require_reproduction: bool = False,
 ) -> ArchiveReproReplay:
     """Validate and replay a portable repro archive without persistent extraction.
 
@@ -50,6 +51,12 @@ def replay_repro_archive(
     including replay-context validation before untrusted input executes. The private
     import is removed on success and failure; only copied validated evidence is
     returned to the caller.
+
+    When ``require_reproduction`` is true, a completed replay whose stable failure
+    signature differs from the archived signature fails closed with ``RuntimeError``.
+    This gate is intentionally separate from replay-context validation: callers may
+    opt out of same-context enforcement for portability experiments while still
+    requiring the transported witness to preserve its exact failure identity.
     """
 
     archive_path = Path(archive_path)
@@ -67,7 +74,7 @@ def replay_repro_archive(
             max_manifest_bytes=max_manifest_bytes,
             require_same_context=require_same_context,
         )
-        return ArchiveReproReplay(
+        result = ArchiveReproReplay(
             archive_path=archive_path,
             input_bytes=replay.bundle.input_bytes,
             signature=replay.bundle.signature,
@@ -75,3 +82,8 @@ def replay_repro_archive(
             replay_context_sha256=replay.bundle.replay_context_sha256,
             run=replay.run,
         )
+        if require_reproduction and not result.reproduced:
+            raise RuntimeError(
+                "portable repro archive did not reproduce archived failure signature"
+            )
+        return result

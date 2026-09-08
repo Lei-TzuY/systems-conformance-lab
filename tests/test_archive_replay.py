@@ -47,7 +47,7 @@ def test_archive_replay_round_trips_real_process_failure(tmp_path) -> None:
     )
     archive = export_repro_archive(repro.path, tmp_path / "portable.zip")
 
-    replay = replay_repro_archive(harness, archive)
+    replay = replay_repro_archive(harness, archive, require_reproduction=True)
 
     assert replay.archive_path == archive
     assert replay.input_bytes == b"BUG-portable"
@@ -55,6 +55,34 @@ def test_archive_replay_round_trips_real_process_failure(tmp_path) -> None:
     assert replay.replay_context_sha256 == harness.replay_context_sha256
     assert replay.reproduced
     assert replay.run.signature == replay.signature
+
+
+def test_archive_replay_strict_gate_rejects_real_process_signature_drift(tmp_path) -> None:
+    original = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    repro = original.write_repro(tmp_path / "bundle", input_bytes=b"BUG-portable")
+    archive = export_repro_archive(repro.path, tmp_path / "portable.zip")
+
+    fixed = DifferentialHarness(candidate=target(ECHO_SCRIPT), oracle=target(ECHO_SCRIPT))
+    with pytest.raises(
+        RuntimeError,
+        match="portable repro archive did not reproduce archived failure signature",
+    ):
+        replay_repro_archive(
+            fixed,
+            archive,
+            require_same_context=False,
+            require_reproduction=True,
+        )
+
+    replay = replay_repro_archive(
+        fixed,
+        archive,
+        require_same_context=False,
+        require_reproduction=False,
+    )
+    assert not replay.reproduced
+    assert replay.signature is not None
+    assert replay.run.signature is None
 
 
 def test_archive_replay_rejects_context_drift_before_target_execution(tmp_path) -> None:
@@ -72,7 +100,11 @@ def test_archive_replay_rejects_context_drift_before_target_execution(tmp_path) 
         max_output_bytes=harness.max_output_bytes - 1,
     )
     with pytest.raises(ValueError, match="repro replay context does not match"):
-        replay_repro_archive(changed, archive)
+        replay_repro_archive(
+            changed,
+            archive,
+            require_reproduction=True,
+        )
 
     assert not marker.exists()
 
@@ -87,6 +119,10 @@ def test_archive_replay_rejects_invalid_archive_before_target_execution(tmp_path
         writer.writestr("manifest.json", b"{}")
 
     with pytest.raises(ValueError, match="fields do not match v1 schema"):
-        replay_repro_archive(harness, archive)
+        replay_repro_archive(
+            harness,
+            archive,
+            require_reproduction=True,
+        )
 
     assert not marker.exists()
