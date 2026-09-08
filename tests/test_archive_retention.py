@@ -1,3 +1,4 @@
+import hashlib
 import os
 import sys
 import zipfile
@@ -54,13 +55,19 @@ def test_archive_retention_keeps_newest_valid_archives_and_replays_real_target(t
     assert result.kept == (archives[2], archives[1])
     assert result.removed == (archives[0],)
     assert set(result.ignored) == {malformed, unrelated, directory}
+    assert tuple(evidence.path for evidence in result.kept_evidence) == result.kept
     assert not archives[0].exists()
     assert malformed.exists()
     assert unrelated.exists()
     assert directory.is_dir()
 
-    for archive in result.kept:
-        replay = replay_repro_archive(harness, archive, require_reproduction=True)
+    for evidence in result.kept_evidence:
+        replay = replay_repro_archive(
+            harness,
+            evidence.path,
+            expected_archive_sha256=evidence.archive_sha256,
+            require_reproduction=True,
+        )
         assert replay.reproduced
 
 
@@ -91,9 +98,14 @@ def test_archive_retention_total_byte_budget_is_greedy_and_replayable(tmp_path) 
 
     assert result.kept == (archives[2], archives[0])
     assert result.removed == (archives[1],)
-    assert sum(path.stat().st_size for path in result.kept) <= byte_budget
-    for archive in result.kept:
-        replay = replay_repro_archive(harness, archive, require_reproduction=True)
+    assert sum(evidence.size_bytes for evidence in result.kept_evidence) <= byte_budget
+    for evidence in result.kept_evidence:
+        replay = replay_repro_archive(
+            harness,
+            evidence.path,
+            expected_archive_sha256=evidence.archive_sha256,
+            require_reproduction=True,
+        )
         assert replay.reproduced
 
 
@@ -137,12 +149,66 @@ def test_archive_retention_preserves_distinct_failure_signatures_before_duplicat
 
     assert result.kept == (duplicate_new, unique_old)
     assert result.removed == (duplicate_middle,)
+    by_path = {evidence.path: evidence for evidence in result.kept_evidence}
     assert replay_repro_archive(
-        mismatch_harness, duplicate_new, require_reproduction=True
+        mismatch_harness,
+        duplicate_new,
+        expected_archive_sha256=by_path[duplicate_new].archive_sha256,
+        require_reproduction=True,
     ).reproduced
     assert replay_repro_archive(
-        exit_harness, unique_old, require_reproduction=True
+        exit_harness,
+        unique_old,
+        expected_archive_sha256=by_path[unique_old].archive_sha256,
+        require_reproduction=True,
     ).reproduced
+
+
+def test_archive_retention_evidence_rejects_post_retention_path_replacement_before_launch(
+    tmp_path,
+) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    root = tmp_path / "archives"
+    root.mkdir()
+    archive = export_repro_archive(
+        harness.write_repro(tmp_path / "original-repro", input_bytes=b"BUG-original").path,
+        root / "retained.zip",
+    )
+    replacement = export_repro_archive(
+        harness.write_repro(
+            tmp_path / "replacement-repro", input_bytes=b"BUG-replacement"
+        ).path,
+        tmp_path / "replacement.zip",
+    )
+
+    result = enforce_repro_archive_retention(root, max_archives=1)
+    evidence = result.kept_evidence[0]
+
+    assert evidence.path == archive
+    assert evidence.size_bytes == len(archive.read_bytes())
+    assert evidence.archive_sha256 == hashlib.sha256(archive.read_bytes()).hexdigest()
+
+    archive.write_bytes(replacement.read_bytes())
+    marker = tmp_path / "candidate-executed"
+    marker_script = (
+        "from pathlib import Path; import sys; "
+        f"Path({str(marker)!r}).write_text('ran', encoding='utf-8'); "
+        "sys.stdout.buffer.write(sys.stdin.buffer.read())"
+    )
+    marker_harness = DifferentialHarness(
+        candidate=target(marker_script),
+        oracle=target(ECHO_SCRIPT),
+    )
+
+    with pytest.raises(ValueError, match="sha256 does not match expected digest"):
+        replay_repro_archive(
+            marker_harness,
+            archive,
+            expected_archive_sha256=evidence.archive_sha256,
+            require_same_context=False,
+        )
+
+    assert not marker.exists()
 
 
 def test_archive_retention_tie_breaks_by_filename_and_ignores_symlinks(tmp_path) -> None:
@@ -166,6 +232,7 @@ def test_archive_retention_tie_breaks_by_filename_and_ignores_symlinks(tmp_path)
     assert result.kept == (first,)
     assert result.removed == (second,)
     assert result.ignored == (symlink,)
+    assert result.kept_evidence[0].path == first
     assert symlink.is_symlink()
 
 

@@ -1,5 +1,9 @@
 from .archive_replay import ArchiveReproReplay, replay_repro_archive
-from .archive_retention import ArchiveRetentionResult, enforce_repro_archive_retention
+from .archive_retention import (
+    ArchiveRetentionEvidence,
+    ArchiveRetentionResult,
+    enforce_repro_archive_retention,
+)
 from .byte_fuzz import DeterministicByteMutations
 from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
@@ -62,6 +66,7 @@ from .write_fault import FaultingBinaryWriter
 
 __all__ = [
     "ArchiveReproReplay",
+    "ArchiveRetentionEvidence",
     "ArchiveRetentionResult",
     "CommandTarget",
     "ComparisonResult",

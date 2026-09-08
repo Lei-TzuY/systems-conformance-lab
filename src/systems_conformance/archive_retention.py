@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import tempfile
 import zipfile
 from dataclasses import dataclass
@@ -11,7 +12,21 @@ from .repro import (
     DEFAULT_MAX_REPRO_MANIFEST_BYTES,
     load_repro_bundle,
 )
-from .repro_archive import DEFAULT_MAX_REPRO_ARCHIVE_BYTES, import_repro_archive
+from .repro_archive import (
+    DEFAULT_MAX_REPRO_ARCHIVE_BYTES,
+    _read_bounded_bytes,
+    import_repro_archive,
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ArchiveRetentionEvidence:
+    """Validated transport identity for one retained portable repro archive."""
+
+    path: Path
+    archive_sha256: str
+    size_bytes: int
+    signature: FailureSignature
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +36,7 @@ class ArchiveRetentionResult:
     kept: tuple[Path, ...]
     removed: tuple[Path, ...]
     ignored: tuple[Path, ...]
+    kept_evidence: tuple[ArchiveRetentionEvidence, ...] = ()
 
 
 def enforce_repro_archive_retention(
@@ -35,13 +51,16 @@ def enforce_repro_archive_retention(
 ) -> ArchiveRetentionResult:
     """Retain validated direct-child repro archives within count and byte budgets.
 
-    Eligibility uses the canonical bounded archive importer, including bundle schema
-    and digest validation. Directories, symlinks, malformed archives, and unrelated
-    files are ignored rather than deleted. Eligible archives are ordered newest first
-    by mtime with filename as a deterministic tiebreaker. The optional aggregate byte
-    budget is applied greedily in that order. When ``preserve_unique_failures`` is
-    enabled, the first pass preferentially retains the newest archive for each stable
-    failure signature before using remaining capacity for duplicate signatures.
+    Eligibility uses one bounded immutable archive snapshot followed by the canonical
+    archive importer, including bundle schema and digest validation. Directories,
+    symlinks, malformed archives, and unrelated files are ignored rather than deleted.
+    Eligible archives are ordered newest first by mtime with filename as a deterministic
+    tiebreaker. The optional aggregate byte budget is applied greedily in that order.
+    When ``preserve_unique_failures`` is enabled, the first pass preferentially retains
+    the newest archive for each stable failure signature before using remaining capacity
+    for duplicate signatures. Returned kept evidence binds each retained path to the
+    SHA-256 and byte length of the exact immutable transport snapshot that was validated,
+    allowing a later replay to fail closed if the retained path has been replaced.
     Deletion uses ``unlink`` so a path swapped to a symlink after validation is removed
     as a link, never followed.
     """
@@ -66,7 +85,7 @@ def enforce_repro_archive_retention(
     if not root.is_dir():
         raise NotADirectoryError(root)
 
-    eligible: list[tuple[int, str, Path, int, FailureSignature]] = []
+    eligible: list[tuple[int, str, ArchiveRetentionEvidence]] = []
     ignored: list[Path] = []
 
     with tempfile.TemporaryDirectory(prefix="systems-conformance-archive-retention-") as temp:
@@ -77,8 +96,15 @@ def enforce_repro_archive_retention(
                 continue
             try:
                 stat_result = child.stat()
-                imported = import_repro_archive(
+                archive_bytes = _read_bounded_bytes(
                     child,
+                    max_bytes=max_archive_bytes,
+                    label="repro archive",
+                )
+                snapshot_archive = scratch / f"archive-{index}.zip"
+                snapshot_archive.write_bytes(archive_bytes)
+                imported = import_repro_archive(
+                    snapshot_archive,
                     scratch / f"bundle-{index}",
                     max_input_bytes=max_input_bytes,
                     max_manifest_bytes=max_manifest_bytes,
@@ -96,50 +122,55 @@ def enforce_repro_archive_retention(
                 (
                     stat_result.st_mtime_ns,
                     child.name,
-                    child,
-                    stat_result.st_size,
-                    signature,
+                    ArchiveRetentionEvidence(
+                        path=child,
+                        archive_sha256=hashlib.sha256(archive_bytes).hexdigest(),
+                        size_bytes=len(archive_bytes),
+                        signature=signature,
+                    ),
                 )
             )
 
     eligible.sort(key=lambda item: (-item[0], item[1]))
     kept: list[Path] = []
+    kept_evidence: list[ArchiveRetentionEvidence] = []
     removed: list[Path] = []
     kept_bytes = 0
 
-    def retain_if_fits(item: tuple[int, str, Path, int, FailureSignature]) -> bool:
+    def retain_if_fits(item: tuple[int, str, ArchiveRetentionEvidence]) -> bool:
         nonlocal kept_bytes
-        _, _, path, archive_size, _ = item
+        evidence = item[2]
         count_fits = len(kept) < max_archives
         bytes_fit = (
             max_total_archive_bytes is None
-            or kept_bytes + archive_size <= max_total_archive_bytes
+            or kept_bytes + evidence.size_bytes <= max_total_archive_bytes
         )
         if count_fits and bytes_fit:
-            kept.append(path)
-            kept_bytes += archive_size
+            kept.append(evidence.path)
+            kept_evidence.append(evidence)
+            kept_bytes += evidence.size_bytes
             return True
         return False
 
     if preserve_unique_failures:
         retained_signatures: set[FailureSignature] = set()
-        duplicates: list[tuple[int, str, Path, int, FailureSignature]] = []
+        duplicates: list[tuple[int, str, ArchiveRetentionEvidence]] = []
         for item in eligible:
-            signature = item[4]
+            signature = item[2].signature
             if signature in retained_signatures:
                 duplicates.append(item)
                 continue
             if retain_if_fits(item):
                 retained_signatures.add(signature)
             else:
-                removed.append(item[2])
+                removed.append(item[2].path)
         for item in duplicates:
             if not retain_if_fits(item):
-                removed.append(item[2])
+                removed.append(item[2].path)
     else:
         for item in eligible:
             if not retain_if_fits(item):
-                removed.append(item[2])
+                removed.append(item[2].path)
 
     for path in removed:
         try:
@@ -151,4 +182,5 @@ def enforce_repro_archive_retention(
         kept=tuple(kept),
         removed=tuple(removed),
         ignored=tuple(ignored),
+        kept_evidence=tuple(kept_evidence),
     )
