@@ -34,6 +34,10 @@ from .sqlite_query_reducer import (
     sqlite_query_setup_statement_deletions,
 )
 from .sqlite_transaction_adapter import SQLiteTransactionTarget
+from .sqlite_transaction_feedback import (
+    SQLiteTransactionFeedbackEvaluator,
+    sqlite_transaction_feedback_features,
+)
 from .sqlite_transaction_fuzz import SQLiteTransactionParameterMutations
 from .sqlite_transaction_reducer import (
     sqlite_transaction_fault_occurrence_complexity,
@@ -71,6 +75,7 @@ __all__ = [
     "SQLiteQueryFeedbackEvaluator",
     "SQLiteQueryParameterMutations",
     "SQLiteQueryTarget",
+    "SQLiteTransactionFeedbackEvaluator",
     "SQLiteTransactionParameterMutations",
     "SQLiteTransactionTarget",
     "StreamCapture",
@@ -96,6 +101,7 @@ __all__ = [
     "sqlite_query_setup_statement_deletions",
     "sqlite_transaction_fault_occurrence_complexity",
     "sqlite_transaction_fault_occurrence_reductions",
+    "sqlite_transaction_feedback_features",
     "sqlite_transaction_parameter_complexity",
     "sqlite_transaction_parameter_reductions",
     "sqlite_transaction_statement_count",
