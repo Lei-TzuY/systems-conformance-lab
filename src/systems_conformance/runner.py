@@ -115,6 +115,14 @@ def _join_io_threads(threads: Sequence[threading.Thread], timeout: float) -> boo
     return all(not thread.is_alive() for thread in threads)
 
 
+def _validate_byte_limit(name: str, value: int, *, allow_zero: bool) -> None:
+    qualifier = "non-negative" if allow_zero else "positive"
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be a {qualifier} integer")
+    if value < 0 or (not allow_zero and value == 0):
+        raise ValueError(f"{name} must be a {qualifier} integer")
+
+
 def run_process(
     argv: Sequence[str],
     *,
@@ -137,19 +145,17 @@ def run_process(
     classified as infrastructure failures rather than allowing reader threads to hang forever.
     OS- and runtime-level spawn failures, including invalid argv/environment encodings, are
     returned as structured infrastructure errors instead of escaping the execution pipeline.
+    Byte ceilings are exact non-bool integers and are validated before process launch.
     """
     if not argv:
         raise ValueError("argv must contain at least one element")
     if not math.isfinite(timeout_seconds) or timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be finite and positive")
-    if max_input_bytes < 0:
-        raise ValueError("max_input_bytes must be non-negative")
+    _validate_byte_limit("max_input_bytes", max_input_bytes, allow_zero=True)
     if len(stdin) > max_input_bytes:
         raise ValueError(f"stdin exceeds max_input_bytes ({len(stdin)} > {max_input_bytes})")
-    if max_output_bytes < 0:
-        raise ValueError("max_output_bytes must be non-negative")
-    if max_total_output_bytes <= 0:
-        raise ValueError("max_total_output_bytes must be positive")
+    _validate_byte_limit("max_output_bytes", max_output_bytes, allow_zero=True)
+    _validate_byte_limit("max_total_output_bytes", max_total_output_bytes, allow_zero=False)
 
     normalized_argv = tuple(str(arg) for arg in argv)
     normalized_cwd = str(Path(cwd)) if cwd is not None else None
