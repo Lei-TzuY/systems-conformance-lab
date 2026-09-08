@@ -134,7 +134,7 @@ class DifferentialHarness:
         ):
             raise TypeError("timeout_seconds must be a finite positive number")
         if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be a finite positive number")
+            raise ValueError("timeout_seconds must be finite and positive")
         if isinstance(self.max_input_bytes, bool) or not isinstance(self.max_input_bytes, int):
             raise TypeError("max_input_bytes must be a non-negative integer")
         if self.max_input_bytes < 0:
