@@ -47,6 +47,10 @@ from .sqlite_transaction_reducer import (
     sqlite_transaction_statement_count,
     sqlite_transaction_statement_deletions,
 )
+from .sqlite_transaction_triage import (
+    SQLiteTransactionReducedFailureRepro,
+    reduce_sqlite_transaction_failure_to_repro,
+)
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
 from .write_fault import FaultingBinaryWriter
 
@@ -77,6 +81,7 @@ __all__ = [
     "SQLiteQueryTarget",
     "SQLiteTransactionFeedbackEvaluator",
     "SQLiteTransactionParameterMutations",
+    "SQLiteTransactionReducedFailureRepro",
     "SQLiteTransactionTarget",
     "StreamCapture",
     "compare_results",
@@ -88,6 +93,7 @@ __all__ = [
     "load_repro_bundle",
     "reduce_case",
     "reduce_failure_to_repro",
+    "reduce_sqlite_transaction_failure_to_repro",
     "run_failure_discovery_campaign",
     "run_feedback_guided_campaign",
     "run_fuzz_campaign",
