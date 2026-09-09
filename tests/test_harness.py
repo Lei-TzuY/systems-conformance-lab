@@ -1,5 +1,6 @@
 import json
 import math
+import os
 import sys
 
 import pytest
@@ -107,9 +108,11 @@ def test_command_target_rejects_non_string_environment(env) -> None:
 
 
 def test_command_target_validated_configuration_executes_real_process() -> None:
+    env = dict(os.environ)
+    env["ONLY"] = "exact-value"
     command = CommandTarget(
         (sys.executable, "-c", "import os; print(os.environ['ONLY'])"),
-        env={"ONLY": "exact-value"},
+        env=env,
     )
     harness = DifferentialHarness(candidate=command, oracle=command)
 
