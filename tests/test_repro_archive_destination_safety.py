@@ -76,3 +76,35 @@ def test_import_rechecks_dangling_symlink_before_publication(tmp_path, monkeypat
     assert not list(tmp_path.glob(".imported.import-*"))
     replay = harness.replay_repro(tmp_path / "original")
     assert replay.reproduced
+
+
+def test_import_does_not_clobber_empty_directory_claimed_at_publication(
+    tmp_path, monkeypatch
+) -> None:
+    harness, archive = make_archive(tmp_path)
+    destination = tmp_path / "imported"
+    real_loader = repro_archive_module.load_repro_bundle
+    calls = 0
+
+    def load_then_claim_empty_directory(path, **kwargs):
+        nonlocal calls
+        loaded = real_loader(path, **kwargs)
+        calls += 1
+        if calls == 1:
+            destination.mkdir()
+        return loaded
+
+    monkeypatch.setattr(
+        repro_archive_module,
+        "load_repro_bundle",
+        load_then_claim_empty_directory,
+    )
+
+    with pytest.raises(FileExistsError, match="destination already exists"):
+        import_repro_archive(archive, destination)
+
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    assert not list(tmp_path.glob(".imported.import-*"))
+    replay = harness.replay_repro(tmp_path / "original")
+    assert replay.reproduced
