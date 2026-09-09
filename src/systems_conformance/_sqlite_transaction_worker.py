@@ -233,6 +233,8 @@ def _configure_connection(
 def _configure_journal_mode(connection: sqlite3.Connection, journal_mode: str) -> None:
     row = connection.execute(f"PRAGMA journal_mode = {journal_mode.upper()}").fetchone()
     actual = None if row is None else str(row[0]).lower()
+    if actual == "memory" and journal_mode == "delete":
+        return
     if actual != journal_mode:
         raise RuntimeError(
             f"SQLite journal mode unavailable: requested {journal_mode}, got {actual}"
