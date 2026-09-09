@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import errno
-import os
 import shutil
 import tempfile
 from pathlib import Path
 
+from .directory_publish import publish_directory_no_replace
 from .directory_sync_fault import FaultingDirectorySync
 from .fault import FaultController, FaultSpec
 from .fsync_fault import FaultingFileSync
@@ -53,8 +53,8 @@ def import_durable_repro_archive(
     The archive first traverses the ordinary bounded importer into a private
     staging bundle. The validated ``input.bin`` and ``manifest.json`` are then
     fsynced, followed by the staging bundle directory. Only after those durable
-    preconditions succeed is the complete directory renamed into place and its
-    containing directory fsynced.
+    preconditions succeed is the complete directory published with an atomic
+    no-replace primitive and its containing directory fsynced.
 
     ``sync_fault_spec`` may use ``operation='import_sync'`` and ``kind='io_error'``
     to inject deterministic EIO at occurrence 0 (input fsync), 1 (manifest fsync),
@@ -111,11 +111,7 @@ def import_durable_repro_archive(
         _checkpoint(controller)
         _sync_directory(staged)
 
-        if destination.exists() or destination.is_symlink():
-            raise FileExistsError(
-                f"repro bundle destination already exists: {destination}"
-            )
-        os.rename(staged, destination)
+        publish_directory_no_replace(staged, destination)
         published = True
 
         _checkpoint(controller)
