@@ -230,3 +230,67 @@ def test_harness_rejects_invalid_execution_limits() -> None:
         DifferentialHarness(candidate=command, oracle=command, max_output_bytes=-1)
     with pytest.raises(ValueError, match="max_total_output_bytes"):
         DifferentialHarness(candidate=command, oracle=command, max_total_output_bytes=0)
+
+
+class _ChangingTargetArgv:
+    def __init__(self, first: tuple[str, ...], later: tuple[object, ...]) -> None:
+        self.first = first
+        self.later = later
+        self.reads = 0
+
+    def __iter__(self):
+        self.reads += 1
+        return iter(self.first if self.reads == 1 else self.later)
+
+
+class _ChangingTargetEnvironment:
+    def __init__(self) -> None:
+        self.values = dict(os.environ)
+        self.values["CONFORMANCE_TARGET_SNAPSHOT"] = "snapshotted"
+        self.reads = 0
+
+    def items(self):
+        self.reads += 1
+        values = dict(self.values)
+        if self.reads > 1:
+            values["CONFORMANCE_TARGET_SNAPSHOT"] = "changed"
+        return values.items()
+
+
+def test_command_target_snapshots_argv_before_validating_snapshot() -> None:
+    script = "print('target-snapshot')"
+    argv = _ChangingTargetArgv(
+        (sys.executable, "-c", script),
+        (sys.executable, "-c", script, 7),
+    )
+
+    command = CommandTarget(argv)
+    harness = DifferentialHarness(candidate=command, oracle=command)
+    result = harness.evaluate(b"")
+
+    assert argv.reads == 1
+    assert command.argv == (sys.executable, "-c", script)
+    assert result.comparison.classification == "match"
+    assert result.candidate.stdout.text.splitlines() == ["target-snapshot"]
+
+
+def test_command_target_replay_identity_matches_executed_environment_snapshot() -> None:
+    env = _ChangingTargetEnvironment()
+    command = CommandTarget(
+        (
+            sys.executable,
+            "-c",
+            "import os; print(os.environ['CONFORMANCE_TARGET_SNAPSHOT'])",
+        ),
+        env=env,
+    )
+    harness = DifferentialHarness(candidate=command, oracle=command)
+    fingerprint = harness.replay_context_sha256
+
+    result = harness.evaluate(b"")
+
+    assert env.reads == 1
+    assert harness.replay_context_sha256 == fingerprint
+    assert dict(command.env or ())["CONFORMANCE_TARGET_SNAPSHOT"] == "snapshotted"
+    assert result.comparison.classification == "match"
+    assert result.candidate.stdout.text.splitlines() == ["snapshotted"]
