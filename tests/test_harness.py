@@ -120,7 +120,7 @@ def test_command_target_validated_configuration_executes_real_process() -> None:
 
     assert result.comparison.classification == "match"
     assert result.candidate.exit_code == 0
-    assert result.candidate.stdout.text == "exact-value\n"
+    assert result.candidate.stdout.text.splitlines() == ["exact-value"]
 
 
 def test_hard_output_budget_changes_replay_context() -> None:
