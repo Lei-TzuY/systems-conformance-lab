@@ -6,6 +6,7 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from .directory_publish import publish_directory_no_replace
 from .directory_sync_fault import FaultingDirectorySync
 from .fault import FaultSpec
 from .fsync_fault import FaultingFileSync
@@ -222,8 +223,8 @@ def import_repro_archive(
     change the ZIP bytes being validated. Unexpected paths, duplicates,
     encryption, compression-method drift, oversized artifacts, and invalid
     bundle contents are rejected before the destination becomes visible.
-    Existing destination entries, including dangling symlinks, are never
-    intentionally replaced.
+    Publication uses an atomic OS no-replace directory primitive, so a competing
+    destination entry cannot be clobbered between validation and publication.
     """
 
     if max_archive_bytes <= 0:
@@ -284,11 +285,7 @@ def import_repro_archive(
             max_input_bytes=max_input_bytes,
             max_manifest_bytes=max_manifest_bytes,
         )
-        if destination.exists() or destination.is_symlink():
-            raise FileExistsError(
-                f"repro bundle destination already exists: {destination}"
-            )
-        os.rename(staging, destination)
+        publish_directory_no_replace(staging, destination)
         published = True
     finally:
         if not published and staging.exists():
