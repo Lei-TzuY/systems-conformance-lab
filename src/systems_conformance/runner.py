@@ -145,17 +145,23 @@ def _validate_byte_limit(name: str, value: int, *, allow_zero: bool) -> None:
 def _validate_process_configuration(
     argv: Sequence[str], env: Mapping[str, str] | None
 ) -> tuple[tuple[str, ...], dict[str, str] | None]:
-    if not argv:
+    if isinstance(argv, (str, bytes)):
+        raise TypeError("argv must be a sequence of strings")
+    normalized_argv = tuple(argv)
+    if not normalized_argv:
         raise ValueError("argv must contain at least one element")
-    if isinstance(argv, (str, bytes)) or any(not isinstance(arg, str) for arg in argv):
+    if any(not isinstance(arg, str) for arg in normalized_argv):
         raise TypeError("argv must be a sequence of strings")
 
-    normalized_argv = tuple(argv)
     if env is None:
         return normalized_argv, None
-    if any(not isinstance(key, str) or not isinstance(value, str) for key, value in env.items()):
+    env_items = tuple(env.items())
+    if any(
+        not isinstance(key, str) or not isinstance(value, str)
+        for key, value in env_items
+    ):
         raise TypeError("env keys and values must be strings")
-    return normalized_argv, dict(env)
+    return normalized_argv, dict(env_items)
 
 
 def run_process(
@@ -183,9 +189,11 @@ def run_process(
     returned as structured infrastructure errors instead of escaping the execution pipeline.
     Timeout and byte ceilings are validated before process launch; booleans are never accepted
     as numeric execution limits. Argv elements and explicit environment keys/values must already
-    be strings so execution configuration is never silently coerced before launch. Stdin must
-    already be bytes so an invalid payload cannot launch a target and fail later in the writer
-    thread after the execution has already started.
+    be strings so execution configuration is never silently coerced before launch. Caller-owned
+    argv/env containers are consumed exactly once into local snapshots before validation so a
+    changing container cannot make validation cover different data from process execution. Stdin
+    must already be bytes so an invalid payload cannot launch a target and fail later in the
+    writer thread after the execution has already started.
     """
     normalized_argv, process_env = _validate_process_configuration(argv, env)
     _validate_timeout_seconds(timeout_seconds)

@@ -182,3 +182,62 @@ def test_rejects_invalid_limits(kwargs: dict[str, object], message: str) -> None
 def test_rejects_empty_argv() -> None:
     with pytest.raises(ValueError, match="argv"):
         run_process([])
+
+
+class _ChangingArgv:
+    def __init__(self, first: tuple[str, ...], later: tuple[object, ...]) -> None:
+        self.first = first
+        self.later = later
+        self.reads = 0
+
+    def __iter__(self):
+        self.reads += 1
+        return iter(self.first if self.reads == 1 else self.later)
+
+
+class _SplitEnvironment:
+    def __init__(self) -> None:
+        self.values = dict(os.environ)
+        self.values["CONFORMANCE_SNAPSHOT"] = "validated"
+        self.item_reads = 0
+
+    def items(self):
+        self.item_reads += 1
+        return self.values.items()
+
+    def keys(self):
+        return self.values.keys()
+
+    def __getitem__(self, key: str) -> str:
+        if key == "CONFORMANCE_SNAPSHOT":
+            return "changed-after-validation"
+        return self.values[key]
+
+
+def test_runner_snapshots_argv_once_before_validation() -> None:
+    script = "print('single-snapshot')"
+    argv = _ChangingArgv(
+        (sys.executable, "-c", script),
+        (sys.executable, "-c", script, 7),
+    )
+
+    result = run_process(argv)
+
+    assert argv.reads == 1
+    assert result.exit_code == 0
+    assert result.infrastructure_error is None
+    assert result.stdout.text.splitlines() == ["single-snapshot"]
+
+
+def test_runner_executes_same_environment_snapshot_it_validated() -> None:
+    env = _SplitEnvironment()
+
+    result = run_process(
+        python("import os; print(os.environ['CONFORMANCE_SNAPSHOT'])"),
+        env=env,
+    )
+
+    assert env.item_reads == 1
+    assert result.exit_code == 0
+    assert result.infrastructure_error is None
+    assert result.stdout.text.splitlines() == ["validated"]
