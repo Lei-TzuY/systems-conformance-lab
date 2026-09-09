@@ -5,7 +5,7 @@ import json
 import math
 import os
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -26,20 +26,23 @@ class CommandTarget:
     """Immutable process-target configuration for differential execution.
 
     ``argv``, ``cwd``, and ``env`` are validated and snapshotted at construction time so later
-    mutation of caller-owned containers cannot silently change a reproducer. Argv elements and
-    explicit environment keys/values must already be strings; target configuration is never
-    silently coerced before it becomes part of replay identity or process execution. Caller-owned
-    argv/env containers are consumed exactly once into immutable snapshots before validation, so
-    a changing container cannot make the validated configuration differ from the stored one.
-    Explicit relative working directories are anchored to the construction-time process directory
-    so a later ambient ``chdir`` cannot redirect execution without changing replay identity.
-    ``env=None`` preserves normal environment inheritance; an explicit mapping is snapshotted
-    into deterministic key order and replaces the child process environment when executed.
+    mutation of caller-owned containers or ambient process context cannot silently change a
+    reproducer. Argv elements and explicit environment keys/values must already be strings; target
+    configuration is never silently coerced before it becomes part of replay identity or process
+    execution. Caller-owned argv/env containers are consumed exactly once into immutable snapshots
+    before validation, so a changing container cannot make the validated configuration differ from
+    the stored one. Explicit relative working directories are anchored to the construction-time
+    process directory. Omitted ``cwd`` and ``env`` retain their public ``None`` configuration but
+    snapshot the construction-time working directory and environment for actual execution and
+    replay identity, preventing later ambient ``chdir`` or environment mutation from redirecting an
+    already-created target.
     """
 
     argv: tuple[str, ...]
     cwd: str | None
     env: tuple[tuple[str, str], ...] | None
+    _effective_cwd: str = field(repr=False)
+    _effective_env: tuple[tuple[str, str], ...] = field(repr=False)
 
     def __init__(
         self,
@@ -56,9 +59,13 @@ class CommandTarget:
         if not normalized_argv:
             raise ValueError("target argv must contain at least one element")
 
+        construction_cwd = str(Path.cwd())
         normalized_cwd = str(Path(cwd).absolute()) if cwd is not None else None
+        effective_cwd = normalized_cwd if normalized_cwd is not None else construction_cwd
+
         if env is None:
             normalized_env = None
+            env_items = tuple(os.environ.items())
         else:
             env_items = tuple(env.items())
             if any(
@@ -67,10 +74,13 @@ class CommandTarget:
             ):
                 raise TypeError("target env keys and values must be strings")
             normalized_env = tuple(sorted(env_items))
+        effective_env = tuple(sorted(env_items))
 
         object.__setattr__(self, "argv", normalized_argv)
         object.__setattr__(self, "cwd", normalized_cwd)
         object.__setattr__(self, "env", normalized_env)
+        object.__setattr__(self, "_effective_cwd", effective_cwd)
+        object.__setattr__(self, "_effective_env", effective_env)
 
     def execute(
         self,
@@ -82,12 +92,11 @@ class CommandTarget:
         max_input_bytes: int = DEFAULT_MAX_INPUT_BYTES,
     ) -> ExecutionResult:
         """Execute this target through the shared safe process runner."""
-        process_env = None if self.env is None else dict(self.env)
         return run_process(
             self.argv,
             stdin=input_bytes,
-            cwd=self.cwd,
-            env=process_env,
+            cwd=self._effective_cwd,
+            env=dict(self._effective_env),
             timeout_seconds=timeout_seconds,
             max_input_bytes=max_input_bytes,
             max_output_bytes=max_output_bytes,
@@ -97,8 +106,8 @@ class CommandTarget:
     def _replay_identity(self) -> dict[str, object]:
         return {
             "argv": list(self.argv),
-            "cwd": self.cwd,
-            "env": None if self.env is None else [list(item) for item in self.env],
+            "cwd": self._effective_cwd,
+            "env": [list(item) for item in self._effective_env],
         }
 
 
