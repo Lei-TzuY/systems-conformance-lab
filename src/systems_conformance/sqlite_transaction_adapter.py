@@ -26,12 +26,13 @@ class SQLiteTransactionTarget:
     Each input creates a fresh database, applies setup statements in autocommit mode,
     runs one explicit transaction program, finalizes it according to ``finalize``,
     then executes a post-finalization observation query. ``journal_mode`` selects a
-    concrete SQLite rollback-journal (``delete``) or WAL storage path. By default the
-    delete-mode worker uses an in-memory database; WAL always uses an internally
-    managed temporary database file because SQLite cannot provide real WAL semantics
-    for ``:memory:``. ``reopen_before_observe`` also selects a file-backed database and
-    closes/reopens SQLite before the observation. The worker emits a deterministic
-    transcript suitable for differential comparison and repro replay.
+    concrete SQLite rollback-journal (``delete``) or WAL storage path, while
+    ``synchronous`` selects SQLite's ``NORMAL`` or ``FULL`` durability policy. By
+    default the delete-mode worker uses an in-memory database; WAL always uses an
+    internally managed temporary database file because SQLite cannot provide real WAL
+    semantics for ``:memory:``. ``reopen_before_observe`` also selects a file-backed
+    database and closes/reopens SQLite before the observation. The worker emits a
+    deterministic transcript suitable for differential comparison and repro replay.
 
     ``max_total_sql_bytes`` bounds aggregate decoded UTF-8 SQL bytes across setup,
     transaction, and observation statements before SQLite execution, ``max_params``
@@ -53,6 +54,7 @@ class SQLiteTransactionTarget:
     enable_faults: bool = False
     reopen_before_observe: bool = False
     journal_mode: Literal["delete", "wal"] = "delete"
+    synchronous: Literal["normal", "full"] = "full"
     max_statements: int = 64
     max_sql_bytes: int = DEFAULT_MAX_SQL_BYTES
     max_total_sql_bytes: int = DEFAULT_MAX_TOTAL_SQL_BYTES
@@ -78,6 +80,8 @@ class SQLiteTransactionTarget:
             raise TypeError("reopen_before_observe must be a bool")
         if self.journal_mode not in {"delete", "wal"}:
             raise ValueError("journal_mode must be 'delete' or 'wal'")
+        if self.synchronous not in {"normal", "full"}:
+            raise ValueError("synchronous must be 'normal' or 'full'")
         if (
             isinstance(self.max_statements, bool)
             or not isinstance(self.max_statements, int)
@@ -173,6 +177,8 @@ class SQLiteTransactionTarget:
             ),
             "--journal-mode",
             self.journal_mode,
+            "--synchronous",
+            self.synchronous,
             "--max-statements",
             str(self.max_statements),
             "--max-sql-bytes",
