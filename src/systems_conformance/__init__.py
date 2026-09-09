@@ -14,6 +14,7 @@ from .feedback_fuzz import (
     FeedbackCorpusEntry,
     run_feedback_guided_campaign,
 )
+from .fsync_fault import FaultingFileSync
 from .fuzz import (
     FuzzCampaignResult,
     FuzzDiscoveryResult,
@@ -78,6 +79,7 @@ __all__ = [
     "FaultController",
     "FaultSpec",
     "FaultingBinaryWriter",
+    "FaultingFileSync",
     "FeedbackCampaignResult",
     "FeedbackCorpusEntry",
     "FuzzCampaignResult",
