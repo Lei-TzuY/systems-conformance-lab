@@ -18,6 +18,7 @@ DEFAULT_MAX_TOTAL_OUTPUT_BYTES = 16 * 1024 * 1024
 _READ_CHUNK_BYTES = 64 * 1024
 _POST_EXIT_DRAIN_SECONDS = 0.1
 _POST_CLEANUP_JOIN_SECONDS = 0.5
+_WINDOWS_TREE_KILL_SECONDS = 1.0
 
 
 class _OutputBudget:
@@ -91,14 +92,23 @@ def _terminate_process_tree(
         return
 
     if os.name == "nt":
-        subprocess.run(
-            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            shell=False,
-        )
+        try:
+            completed = subprocess.run(
+                ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                shell=False,
+                timeout=_WINDOWS_TREE_KILL_SECONDS,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            completed = None
+        if (completed is None or completed.returncode != 0) and process.poll() is None:
+            try:
+                process.kill()
+            except OSError:
+                pass
         return
 
     if process.poll() is None:
