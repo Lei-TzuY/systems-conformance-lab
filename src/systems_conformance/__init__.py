@@ -25,6 +25,7 @@ from .fuzz import (
 from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproReplay
 from .model import ExecutionResult, StreamCapture
 from .reducer import ReductionResult, reduce_case
+from .replace_fault import FaultingAtomicReplace
 from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
 from .repro_archive import export_repro_archive, import_repro_archive
 from .retention import RetentionResult, enforce_repro_retention
@@ -78,6 +79,7 @@ __all__ = [
     "FailureSignature",
     "FaultController",
     "FaultSpec",
+    "FaultingAtomicReplace",
     "FaultingBinaryWriter",
     "FaultingFileSync",
     "FeedbackCampaignResult",
