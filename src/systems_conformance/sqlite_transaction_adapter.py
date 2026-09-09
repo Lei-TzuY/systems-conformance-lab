@@ -25,13 +25,17 @@ class SQLiteTransactionTarget:
 
     Each input creates a fresh database, applies setup statements in autocommit mode,
     runs one explicit transaction program, finalizes it according to ``finalize``,
-    then executes a post-finalization observation query. By default the worker uses an
-    in-memory database; ``reopen_before_observe`` switches to an internally managed
-    temporary database file and closes/reopens SQLite before the observation. The
-    worker emits a deterministic transcript suitable for differential comparison and
-    repro replay. ``max_total_sql_bytes`` bounds aggregate decoded UTF-8 SQL bytes
-    across setup, transaction, and observation statements before SQLite execution,
-    ``max_params`` bounds each transaction/observation statement's bind cardinality,
+    then executes a post-finalization observation query. ``journal_mode`` selects a
+    concrete SQLite rollback-journal (``delete``) or WAL storage path. By default the
+    delete-mode worker uses an in-memory database; WAL always uses an internally
+    managed temporary database file because SQLite cannot provide real WAL semantics
+    for ``:memory:``. ``reopen_before_observe`` also selects a file-backed database and
+    closes/reopens SQLite before the observation. The worker emits a deterministic
+    transcript suitable for differential comparison and repro replay.
+
+    ``max_total_sql_bytes`` bounds aggregate decoded UTF-8 SQL bytes across setup,
+    transaction, and observation statements before SQLite execution, ``max_params``
+    bounds each transaction/observation statement's bind cardinality,
     ``max_param_value_bytes`` bounds each string bind by its decoded UTF-8 byte length,
     ``max_param_bytes`` bounds aggregate decoded UTF-8 bytes across all string binds in
     each transaction or observation statement, ``max_result_columns`` bounds each
@@ -48,6 +52,7 @@ class SQLiteTransactionTarget:
     foreign_keys: bool = True
     enable_faults: bool = False
     reopen_before_observe: bool = False
+    journal_mode: Literal["delete", "wal"] = "delete"
     max_statements: int = 64
     max_sql_bytes: int = DEFAULT_MAX_SQL_BYTES
     max_total_sql_bytes: int = DEFAULT_MAX_TOTAL_SQL_BYTES
@@ -71,6 +76,8 @@ class SQLiteTransactionTarget:
             raise TypeError("enable_faults must be a bool")
         if not isinstance(self.reopen_before_observe, bool):
             raise TypeError("reopen_before_observe must be a bool")
+        if self.journal_mode not in {"delete", "wal"}:
+            raise ValueError("journal_mode must be 'delete' or 'wal'")
         if (
             isinstance(self.max_statements, bool)
             or not isinstance(self.max_statements, int)
@@ -164,6 +171,8 @@ class SQLiteTransactionTarget:
                 if self.reopen_before_observe
                 else "--same-connection-observe"
             ),
+            "--journal-mode",
+            self.journal_mode,
             "--max-statements",
             str(self.max_statements),
             "--max-sql-bytes",
