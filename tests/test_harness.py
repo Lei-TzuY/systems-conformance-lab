@@ -94,6 +94,32 @@ def test_command_target_snapshots_mutable_configuration(tmp_path) -> None:
     assert command.env == (("ONLY", "value"),)
 
 
+@pytest.mark.parametrize("argv", [(sys.executable, 1), (sys.executable, None), "python", b"python"])
+def test_command_target_rejects_non_string_argv(argv) -> None:
+    with pytest.raises(TypeError, match="target argv must be a sequence of strings"):
+        CommandTarget(argv)
+
+
+@pytest.mark.parametrize("env", [{1: "value"}, {"KEY": 1}, {"KEY": None}])
+def test_command_target_rejects_non_string_environment(env) -> None:
+    with pytest.raises(TypeError, match="target env keys and values must be strings"):
+        CommandTarget((sys.executable, "-c", ECHO_SCRIPT), env=env)
+
+
+def test_command_target_validated_configuration_executes_real_process() -> None:
+    command = CommandTarget(
+        (sys.executable, "-c", "import os; print(os.environ['ONLY'])"),
+        env={"ONLY": "exact-value"},
+    )
+    harness = DifferentialHarness(candidate=command, oracle=command)
+
+    result = harness.evaluate(b"")
+
+    assert result.comparison.classification == "match"
+    assert result.candidate.exit_code == 0
+    assert result.candidate.stdout.text == "exact-value\n"
+
+
 def test_hard_output_budget_changes_replay_context() -> None:
     command = target(ECHO_SCRIPT)
     baseline = DifferentialHarness(candidate=command, oracle=command)
