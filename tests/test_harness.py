@@ -108,8 +108,9 @@ def test_command_target_rejects_non_string_environment(env) -> None:
 
 
 def test_command_target_validated_configuration_executes_real_process() -> None:
-    env = dict(os.environ)
-    env["ONLY"] = "exact-value"
+    env = {"ONLY": "exact-value"}
+    if os.name == "nt":
+        env["SystemRoot"] = os.environ["SystemRoot"]
     command = CommandTarget(
         (sys.executable, "-c", "import os; print(os.environ['ONLY'])"),
         env=env,
