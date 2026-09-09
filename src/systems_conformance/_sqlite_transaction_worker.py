@@ -71,6 +71,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     persistence.add_argument("--reopen-before-observe", action="store_true")
     persistence.add_argument("--same-connection-observe", action="store_true")
     parser.add_argument("--journal-mode", choices=("delete", "wal"), default="delete")
+    parser.add_argument("--synchronous", choices=("normal", "full"), default="full")
     parser.add_argument("--max-statements", required=True, type=_positive_int)
     parser.add_argument("--max-sql-bytes", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
@@ -241,6 +242,17 @@ def _configure_journal_mode(connection: sqlite3.Connection, journal_mode: str) -
         )
 
 
+def _configure_synchronous(connection: sqlite3.Connection, synchronous: str) -> None:
+    expected = {"normal": 1, "full": 2}[synchronous]
+    connection.execute(f"PRAGMA synchronous = {synchronous.upper()}")
+    row = connection.execute("PRAGMA synchronous").fetchone()
+    actual = None if row is None else int(row[0])
+    if actual != expected:
+        raise RuntimeError(
+            f"SQLite synchronous mode unavailable: requested {synchronous}, got {actual}"
+        )
+
+
 def _checkpoint(controller: FaultController | None, operation: str) -> None:
     if controller is None:
         return
@@ -264,6 +276,7 @@ def _run(
     enable_faults: bool,
     reopen_before_observe: bool,
     journal_mode: str,
+    synchronous: str,
     max_statements: int,
     max_sql_bytes: int,
     max_vm_steps: int | None,
@@ -287,6 +300,7 @@ def _run(
     connection = sqlite3.connect(database, isolation_level=None)
     try:
         _configure_journal_mode(connection, journal_mode)
+        _configure_synchronous(connection, synchronous)
         _configure_connection(connection, foreign_keys=foreign_keys, budget=budget)
         try:
             for statement in setup:
@@ -314,6 +328,7 @@ def _run(
                 connection.close()
                 connection = sqlite3.connect(database, isolation_level=None)
                 _configure_journal_mode(connection, journal_mode)
+                _configure_synchronous(connection, synchronous)
                 _configure_connection(connection, foreign_keys=foreign_keys, budget=budget)
 
             _checkpoint(controller, "observe")
@@ -344,6 +359,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             enable_faults=args.enable_faults,
             reopen_before_observe=args.reopen_before_observe,
             journal_mode=args.journal_mode,
+            synchronous=args.synchronous,
             max_statements=args.max_statements,
             max_sql_bytes=args.max_sql_bytes,
             max_vm_steps=args.max_vm_steps,
