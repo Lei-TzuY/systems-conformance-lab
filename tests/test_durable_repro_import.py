@@ -4,6 +4,7 @@ import sys
 
 import pytest
 
+import systems_conformance.durable_repro_import as durable_import_module
 from systems_conformance import (
     CommandTarget,
     DifferentialHarness,
@@ -85,6 +86,39 @@ def test_parent_sync_fault_reports_postpublication_state(tmp_path) -> None:
     assert replay.reproduced
     assert replay.bundle.metadata == {"source": "durable-import-integration"}
     assert not list(tmp_path.glob(".imported.durable-import-*"))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="directory fsync is not portable on Windows")
+def test_durable_import_does_not_clobber_competing_empty_directory(
+    tmp_path, monkeypatch
+) -> None:
+    harness, archive = make_archive(tmp_path)
+    destination = tmp_path / "imported"
+    real_sync_directory = durable_import_module._sync_directory
+    claimed = False
+
+    def sync_then_claim_destination(path):
+        nonlocal claimed
+        real_sync_directory(path)
+        if path.name == "bundle" and not claimed:
+            destination.mkdir()
+            claimed = True
+
+    monkeypatch.setattr(
+        durable_import_module,
+        "_sync_directory",
+        sync_then_claim_destination,
+    )
+
+    with pytest.raises(FileExistsError, match="destination already exists"):
+        import_durable_repro_archive(archive, destination)
+
+    assert claimed
+    assert destination.is_dir()
+    assert list(destination.iterdir()) == []
+    assert not list(tmp_path.glob(".imported.durable-import-*"))
+    replay = harness.replay_repro(tmp_path / "original")
+    assert replay.reproduced
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows-specific fail-closed contract")
