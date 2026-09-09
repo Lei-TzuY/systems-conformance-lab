@@ -18,6 +18,7 @@ DEFAULT_MAX_TOTAL_OUTPUT_BYTES = 16 * 1024 * 1024
 _READ_CHUNK_BYTES = 64 * 1024
 _POST_EXIT_DRAIN_SECONDS = 0.1
 _POST_CLEANUP_JOIN_SECONDS = 0.5
+_POST_TERMINATION_WAIT_SECONDS = 1.0
 _WINDOWS_TREE_KILL_SECONDS = 1.0
 
 
@@ -115,6 +116,27 @@ def _terminate_process_tree(
         process.kill()
 
 
+def _wait_after_termination(process: subprocess.Popen[bytes]) -> bool:
+    """Bound process reaping after the runner has requested termination."""
+    try:
+        process.wait(timeout=_POST_TERMINATION_WAIT_SECONDS)
+        return True
+    except subprocess.TimeoutExpired:
+        pass
+
+    if process.poll() is None:
+        try:
+            process.kill()
+        except OSError:
+            pass
+
+    try:
+        process.wait(timeout=_POST_TERMINATION_WAIT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return False
+    return True
+
+
 def _posix_process_group_survives_root(process: subprocess.Popen[bytes]) -> bool:
     if os.name != "posix":
         return False
@@ -203,7 +225,9 @@ def run_process(
     argv/env containers are consumed exactly once into local snapshots before validation so a
     changing container cannot make validation cover different data from process execution. Stdin
     must already be bytes so an invalid payload cannot launch a target and fail later in the
-    writer thread after the execution has already started.
+    writer thread after the execution has already started. Once timeout or output cleanup begins,
+    root-process reaping is also bounded; a root that remains unreapable after a second direct
+    kill attempt is reported as an infrastructure failure instead of blocking indefinitely.
     """
     normalized_argv, process_env = _validate_process_configuration(argv, env)
     _validate_timeout_seconds(timeout_seconds)
@@ -225,6 +249,7 @@ def run_process(
 
     started = time.monotonic()
     timed_out = False
+    termination_requested = False
     infrastructure_error: str | None = None
 
     try:
@@ -287,15 +312,23 @@ def run_process(
                 "OutputLimitExceeded: combined stdout/stderr exceeded "
                 f"{max_total_output_bytes} bytes"
             )
+            termination_requested = True
             _terminate_process_tree(process)
             break
         if time.monotonic() >= deadline:
             timed_out = True
+            termination_requested = True
             _terminate_process_tree(process)
             break
         time.sleep(0.005)
 
-    process.wait()
+    if termination_requested:
+        if not _wait_after_termination(process):
+            infrastructure_error = (
+                "ProcessTerminationTimeout: root process remained alive after cleanup"
+            )
+    else:
+        process.wait()
 
     if _posix_process_group_survives_root(process):
         if infrastructure_error is None and not timed_out:
