@@ -6,6 +6,9 @@ import tempfile
 import zipfile
 from pathlib import Path
 
+from .directory_sync_fault import FaultingDirectorySync
+from .fault import FaultSpec
+from .fsync_fault import FaultingFileSync
 from .repro import (
     DEFAULT_MAX_REPRO_INPUT_BYTES,
     DEFAULT_MAX_REPRO_MANIFEST_BYTES,
@@ -55,27 +58,36 @@ def _publish_file_no_replace(staging_path: Path, destination: Path) -> None:
         ) from None
 
 
-def export_repro_archive(
+def _non_triggering_fault_spec(operation: str) -> FaultSpec:
+    """Return a valid spec that cannot trigger at this one-shot sync boundary."""
+
+    return FaultSpec(operation=operation, occurrence=1, kind="io_error")
+
+
+def _export_repro_archive(
     bundle_path: Path,
     archive_path: Path,
     *,
-    max_input_bytes: int = DEFAULT_MAX_REPRO_INPUT_BYTES,
-    max_manifest_bytes: int = DEFAULT_MAX_REPRO_MANIFEST_BYTES,
+    max_input_bytes: int,
+    max_manifest_bytes: int,
+    durable: bool,
+    file_sync_spec: FaultSpec | None,
+    directory_sync_spec: FaultSpec | None,
 ) -> Path:
-    """Export one validated repro bundle as a deterministic portable ZIP.
-
-    The archive contains exactly one bounded snapshot of ``input.bin`` and
-    ``manifest.json`` that has been validated together. ZIP_STORED plus fixed
-    member metadata keeps equal bundles byte-for-byte reproducible across export
-    locations while avoiding decompression bombs on the supported import path.
-    The final archive path is published atomically only after the ZIP is closed,
-    so readers never observe a partially written transport artifact.
-    """
-
     bundle_path = Path(bundle_path)
     archive_path = Path(archive_path)
     if archive_path.exists() or archive_path.is_symlink():
         raise FileExistsError(f"repro archive destination already exists: {archive_path}")
+
+    directory_sync = None
+    effective_file_sync_spec = None
+    if durable:
+        effective_file_sync_spec = file_sync_spec or _non_triggering_fault_spec("fsync")
+        directory_sync = FaultingDirectorySync(
+            directory_sync_spec or _non_triggering_fault_spec("dir_fsync")
+        )
+    elif file_sync_spec is not None or directory_sync_spec is not None:
+        raise ValueError("fault specs require durable repro archive export")
 
     loaded = load_repro_bundle(
         bundle_path,
@@ -120,12 +132,78 @@ def export_repro_archive(
             ) as archive:
                 archive.writestr(_regular_zip_info("input.bin"), input_bytes)
                 archive.writestr(_regular_zip_info("manifest.json"), manifest)
+
+            if durable:
+                assert effective_file_sync_spec is not None
+                with staging_archive.open("r+b") as sink:
+                    FaultingFileSync(sink, effective_file_sync_spec).sync()
+
             _publish_file_no_replace(staging_archive, archive_path)
+
+            if directory_sync is not None:
+                directory_sync.sync(archive_path.parent)
         finally:
             if staging_archive.exists():
                 staging_archive.unlink()
 
     return archive_path
+
+
+def export_repro_archive(
+    bundle_path: Path,
+    archive_path: Path,
+    *,
+    max_input_bytes: int = DEFAULT_MAX_REPRO_INPUT_BYTES,
+    max_manifest_bytes: int = DEFAULT_MAX_REPRO_MANIFEST_BYTES,
+) -> Path:
+    """Export one validated repro bundle as a deterministic portable ZIP.
+
+    The archive contains exactly one bounded snapshot of ``input.bin`` and
+    ``manifest.json`` that has been validated together. ZIP_STORED plus fixed
+    member metadata keeps equal bundles byte-for-byte reproducible across export
+    locations while avoiding decompression bombs on the supported import path.
+    The final archive path is published atomically only after the ZIP is closed,
+    so readers never observe a partially written transport artifact.
+    """
+
+    return _export_repro_archive(
+        bundle_path,
+        archive_path,
+        max_input_bytes=max_input_bytes,
+        max_manifest_bytes=max_manifest_bytes,
+        durable=False,
+        file_sync_spec=None,
+        directory_sync_spec=None,
+    )
+
+
+def export_durable_repro_archive(
+    bundle_path: Path,
+    archive_path: Path,
+    *,
+    file_sync_spec: FaultSpec | None = None,
+    directory_sync_spec: FaultSpec | None = None,
+    max_input_bytes: int = DEFAULT_MAX_REPRO_INPUT_BYTES,
+    max_manifest_bytes: int = DEFAULT_MAX_REPRO_MANIFEST_BYTES,
+) -> Path:
+    """Export and durably publish a repro archive with deterministic sync faults.
+
+    The closed staging ZIP is first flushed through a real file ``fsync``, then
+    hard-linked into place without clobbering an existing destination, and finally
+    followed by a real containing-directory ``fsync``. Optional fault specs inject
+    deterministic ``EIO`` at either sync boundary. Directory fsync is not portable
+    on Windows, so this API fails closed there before publishing a destination.
+    """
+
+    return _export_repro_archive(
+        bundle_path,
+        archive_path,
+        max_input_bytes=max_input_bytes,
+        max_manifest_bytes=max_manifest_bytes,
+        durable=True,
+        file_sync_spec=file_sync_spec,
+        directory_sync_spec=directory_sync_spec,
+    )
 
 
 def import_repro_archive(

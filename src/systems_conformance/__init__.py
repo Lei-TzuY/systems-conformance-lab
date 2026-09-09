@@ -29,7 +29,11 @@ from .model import ExecutionResult, StreamCapture
 from .reducer import ReductionResult, reduce_case
 from .replace_fault import FaultingAtomicReplace
 from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
-from .repro_archive import export_repro_archive, import_repro_archive
+from .repro_archive import (
+    export_durable_repro_archive,
+    export_repro_archive,
+    import_repro_archive,
+)
 from .retention import RetentionResult, enforce_repro_retention
 from .runner import run_process
 from .sqlite_adapter import SQLiteQueryTarget
@@ -109,6 +113,7 @@ __all__ = [
     "compare_results",
     "enforce_repro_archive_retention",
     "enforce_repro_retention",
+    "export_durable_repro_archive",
     "export_repro_archive",
     "failure_signature",
     "hierarchical_byte_deletions",
