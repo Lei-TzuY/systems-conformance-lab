@@ -70,6 +70,7 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     persistence = parser.add_mutually_exclusive_group(required=True)
     persistence.add_argument("--reopen-before-observe", action="store_true")
     persistence.add_argument("--same-connection-observe", action="store_true")
+    parser.add_argument("--journal-mode", choices=("delete", "wal"), default="delete")
     parser.add_argument("--max-statements", required=True, type=_positive_int)
     parser.add_argument("--max-sql-bytes", required=True, type=_positive_int)
     parser.add_argument("--max-vm-steps", type=_positive_int)
@@ -229,6 +230,17 @@ def _configure_connection(
         connection.set_progress_handler(budget.progress, 1)
 
 
+def _configure_journal_mode(connection: sqlite3.Connection, journal_mode: str) -> None:
+    row = connection.execute(f"PRAGMA journal_mode = {journal_mode.upper()}").fetchone()
+    actual = None if row is None else str(row[0]).lower()
+    if actual == "memory" and journal_mode == "delete":
+        return
+    if actual != journal_mode:
+        raise RuntimeError(
+            f"SQLite journal mode unavailable: requested {journal_mode}, got {actual}"
+        )
+
+
 def _checkpoint(controller: FaultController | None, operation: str) -> None:
     if controller is None:
         return
@@ -251,6 +263,7 @@ def _run(
     foreign_keys: bool,
     enable_faults: bool,
     reopen_before_observe: bool,
+    journal_mode: str,
     max_statements: int,
     max_sql_bytes: int,
     max_vm_steps: int | None,
@@ -265,7 +278,7 @@ def _run(
 
     temporary_directory: tempfile.TemporaryDirectory[str] | None = None
     database = ":memory:"
-    if reopen_before_observe:
+    if reopen_before_observe or journal_mode == "wal":
         temporary_directory = tempfile.TemporaryDirectory(
             prefix="systems-conformance-sqlite-"
         )
@@ -273,6 +286,7 @@ def _run(
 
     connection = sqlite3.connect(database, isolation_level=None)
     try:
+        _configure_journal_mode(connection, journal_mode)
         _configure_connection(connection, foreign_keys=foreign_keys, budget=budget)
         try:
             for statement in setup:
@@ -299,6 +313,7 @@ def _run(
             if reopen_before_observe:
                 connection.close()
                 connection = sqlite3.connect(database, isolation_level=None)
+                _configure_journal_mode(connection, journal_mode)
                 _configure_connection(connection, foreign_keys=foreign_keys, budget=budget)
 
             _checkpoint(controller, "observe")
@@ -328,6 +343,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             foreign_keys=args.foreign_keys,
             enable_faults=args.enable_faults,
             reopen_before_observe=args.reopen_before_observe,
+            journal_mode=args.journal_mode,
             max_statements=args.max_statements,
             max_sql_bytes=args.max_sql_bytes,
             max_vm_steps=args.max_vm_steps,
@@ -345,7 +361,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         error_name = getattr(exc, "sqlite_errorname", type(exc).__name__)
         sys.stderr.write(f"sqlite_error: {error_name}\n")
         return 3
-    except (TypeError, ValueError) as exc:
+    except (RuntimeError, TypeError, ValueError) as exc:
         sys.stderr.write(f"result_error: {exc}\n")
         return 4
     sys.stdout.buffer.write(output)
