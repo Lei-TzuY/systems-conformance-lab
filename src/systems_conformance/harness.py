@@ -25,11 +25,12 @@ from .runner import (
 class CommandTarget:
     """Immutable process-target configuration for differential execution.
 
-    ``argv``, ``cwd``, and ``env`` are normalized at construction time so later
-    mutation of caller-owned containers cannot silently change a reproducer.
-    ``env=None`` preserves normal environment inheritance; an explicit mapping
-    is snapshotted into deterministic key order and replaces the child process
-    environment when the target is executed.
+    ``argv``, ``cwd``, and ``env`` are validated and snapshotted at construction time so later
+    mutation of caller-owned containers cannot silently change a reproducer. Argv elements and
+    explicit environment keys/values must already be strings; target configuration is never
+    silently coerced before it becomes part of replay identity or process execution.
+    ``env=None`` preserves normal environment inheritance; an explicit mapping is snapshotted
+    into deterministic key order and replaces the child process environment when executed.
     """
 
     argv: tuple[str, ...]
@@ -43,16 +44,18 @@ class CommandTarget:
         cwd: str | os.PathLike[str] | None = None,
         env: Mapping[str, str] | None = None,
     ) -> None:
-        normalized_argv = tuple(str(arg) for arg in argv)
+        if isinstance(argv, (str, bytes)) or any(not isinstance(arg, str) for arg in argv):
+            raise TypeError("target argv must be a sequence of strings")
+        normalized_argv = tuple(argv)
         if not normalized_argv:
             raise ValueError("target argv must contain at least one element")
 
         normalized_cwd = str(Path(cwd)) if cwd is not None else None
-        normalized_env = (
-            None
-            if env is None
-            else tuple(sorted((str(key), str(value)) for key, value in env.items()))
-        )
+        if env is not None and any(
+            not isinstance(key, str) or not isinstance(value, str) for key, value in env.items()
+        ):
+            raise TypeError("target env keys and values must be strings")
+        normalized_env = None if env is None else tuple(sorted(env.items()))
 
         object.__setattr__(self, "argv", normalized_argv)
         object.__setattr__(self, "cwd", normalized_cwd)
