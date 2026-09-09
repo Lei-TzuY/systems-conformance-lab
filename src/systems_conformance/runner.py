@@ -183,11 +183,15 @@ def run_process(
     returned as structured infrastructure errors instead of escaping the execution pipeline.
     Timeout and byte ceilings are validated before process launch; booleans are never accepted
     as numeric execution limits. Argv elements and explicit environment keys/values must already
-    be strings so execution configuration is never silently coerced before launch.
+    be strings so execution configuration is never silently coerced before launch. Stdin must
+    already be bytes so an invalid payload cannot launch a target and fail later in the writer
+    thread after the execution has already started.
     """
     normalized_argv, process_env = _validate_process_configuration(argv, env)
     _validate_timeout_seconds(timeout_seconds)
     _validate_byte_limit("max_input_bytes", max_input_bytes, allow_zero=True)
+    if not isinstance(stdin, bytes):
+        raise TypeError("stdin must be bytes")
     if len(stdin) > max_input_bytes:
         raise ValueError(f"stdin exceeds max_input_bytes ({len(stdin)} > {max_input_bytes})")
     _validate_byte_limit("max_output_bytes", max_output_bytes, allow_zero=True)
