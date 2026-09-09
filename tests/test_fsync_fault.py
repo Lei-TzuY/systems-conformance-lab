@@ -3,7 +3,7 @@ import tempfile
 
 import pytest
 
-from systems_conformance import FaultSpec, FaultingFileSync
+from systems_conformance import FaultingFileSync, FaultSpec
 
 
 def test_file_sync_rejects_unsupported_fault_contract() -> None:
