@@ -8,6 +8,7 @@ from .byte_fuzz import DeterministicByteMutations
 from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
 from .directory_sync_fault import FaultingDirectorySync
+from .durable_publish import FaultingDurableFilePublisher
 from .failure import FailureSignature, failure_signature
 from .fault import FaultController, FaultSpec
 from .feedback_fuzz import (
@@ -83,6 +84,7 @@ __all__ = [
     "FaultingAtomicReplace",
     "FaultingBinaryWriter",
     "FaultingDirectorySync",
+    "FaultingDurableFilePublisher",
     "FaultingFileSync",
     "FeedbackCampaignResult",
     "FeedbackCorpusEntry",
