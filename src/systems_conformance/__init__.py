@@ -9,6 +9,7 @@ from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
 from .directory_sync_fault import FaultingDirectorySync
 from .durable_publish import FaultingDurableFilePublisher
+from .durable_repro_import import import_durable_repro_archive
 from .failure import FailureSignature, failure_signature
 from .fault import FaultController, FaultSpec
 from .feedback_fuzz import (
@@ -117,6 +118,7 @@ __all__ = [
     "export_repro_archive",
     "failure_signature",
     "hierarchical_byte_deletions",
+    "import_durable_repro_archive",
     "import_repro_archive",
     "load_repro_bundle",
     "reduce_case",
