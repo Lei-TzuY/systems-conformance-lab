@@ -14,6 +14,14 @@ class SQLiteWALCrashRecoveryTarget:
     pin_reader_snapshot: bool = False
     checkpoint_after_crash: bool = False
 
+    def __post_init__(self) -> None:
+        if self.checkpoint_after_crash and not (
+            self.commit_before_crash and self.pin_reader_snapshot
+        ):
+            raise ValueError(
+                "checkpoint_after_crash requires commit_before_crash and pin_reader_snapshot"
+            )
+
     def as_command_target(self) -> CommandTarget:
         argv = [sys.executable, "-m", "systems_conformance._sqlite_wal_crash_recovery_worker"]
         if self.commit_before_crash:
