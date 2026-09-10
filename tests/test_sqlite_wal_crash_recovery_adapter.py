@@ -47,15 +47,73 @@ def test_committed_wal_update_survives_writer_crash_before_normal_close() -> Non
     }
 
 
-def test_commit_before_crash_is_bound_into_command_identity() -> None:
-    uncommitted = SQLiteWALCrashRecoveryTarget().as_command_target()
-    committed = SQLiteWALCrashRecoveryTarget(commit_before_crash=True).as_command_target()
+def test_pinned_reader_survives_uncommitted_writer_crash_and_fresh_commit() -> None:
+    result = _execute(SQLiteWALCrashRecoveryTarget(pin_reader_snapshot=True))
 
-    assert committed.argv == (*uncommitted.argv, "--commit-before-crash")
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0, result.stderr.text
+    assert result.stderr.text == ""
+    assert json.loads(result.stdout.text) == {
+        "journal_mode": "wal",
+        "writer_checkpoint": "uncommitted_update_ready",
+        "writer_terminated": True,
+        "recovered_value": 0,
+        "fresh_committed_value": 2,
+        "reader_snapshot_pinned": True,
+        "pinned_reader_value": 0,
+        "post_release_value": 2,
+    }
+
+
+def test_pinned_reader_keeps_snapshot_across_committed_writer_crash() -> None:
+    result = _execute(
+        SQLiteWALCrashRecoveryTarget(
+            commit_before_crash=True,
+            pin_reader_snapshot=True,
+        )
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0, result.stderr.text
+    assert result.stderr.text == ""
+    assert json.loads(result.stdout.text) == {
+        "journal_mode": "wal",
+        "writer_checkpoint": "committed_update_ready",
+        "writer_terminated": True,
+        "recovered_value": 1,
+        "fresh_committed_value": 2,
+        "reader_snapshot_pinned": True,
+        "pinned_reader_value": 0,
+        "post_release_value": 2,
+    }
+
+
+def test_crash_modes_are_bound_into_command_identity() -> None:
+    baseline = SQLiteWALCrashRecoveryTarget().as_command_target()
+    committed = SQLiteWALCrashRecoveryTarget(commit_before_crash=True).as_command_target()
+    pinned = SQLiteWALCrashRecoveryTarget(pin_reader_snapshot=True).as_command_target()
+    combined = SQLiteWALCrashRecoveryTarget(
+        commit_before_crash=True,
+        pin_reader_snapshot=True,
+    ).as_command_target()
+
+    assert committed.argv == (*baseline.argv, "--commit-before-crash")
+    assert pinned.argv == (*baseline.argv, "--pin-reader-snapshot")
+    assert combined.argv == (
+        *baseline.argv,
+        "--commit-before-crash",
+        "--pin-reader-snapshot",
+    )
 
 
 def test_wal_crash_recovery_target_rejects_nonempty_untrusted_input() -> None:
-    result = _execute(SQLiteWALCrashRecoveryTarget(commit_before_crash=True), b"SELECT 1")
+    result = _execute(
+        SQLiteWALCrashRecoveryTarget(
+            commit_before_crash=True,
+            pin_reader_snapshot=True,
+        ),
+        b"SELECT 1",
+    )
 
     assert result.infrastructure_error is None
     assert result.exit_code == 2
@@ -67,7 +125,10 @@ def test_wal_crash_recovery_target_rejects_nonempty_untrusted_input() -> None:
 
 
 def test_real_harness_repeats_wal_crash_recovery_deterministically() -> None:
-    target = SQLiteWALCrashRecoveryTarget(commit_before_crash=True)
+    target = SQLiteWALCrashRecoveryTarget(
+        commit_before_crash=True,
+        pin_reader_snapshot=True,
+    )
     harness = DifferentialHarness(
         candidate=target.as_command_target(),
         oracle=target.as_command_target(),
