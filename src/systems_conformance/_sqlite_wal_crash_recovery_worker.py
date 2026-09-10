@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
+import pathlib
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
-from pathlib import Path
 
 
 _WORKER_MODULE = "systems_conformance._sqlite_wal_crash_recovery_worker"
@@ -29,7 +29,7 @@ def _run() -> bytes:
     with tempfile.TemporaryDirectory(
         prefix="systems-conformance-sqlite-wal-crash-recovery-"
     ) as directory:
-        database = str(Path(directory) / "case.sqlite")
+        database = str(pathlib.Path(directory) / "case.sqlite")
         bootstrap = sqlite3.connect(database, isolation_level=None)
         try:
             row = bootstrap.execute("PRAGMA journal_mode = WAL").fetchone()
