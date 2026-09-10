@@ -54,5 +54,5 @@ def test_real_harness_compares_delete_and_wal_writer_lock_semantics() -> None:
 
     run = harness.evaluate(b"")
 
-    assert run.comparison.equal
-    assert run.comparison.classification == "equal"
+    assert run.comparison.equivalent is True
+    assert run.comparison.classification == "match"
