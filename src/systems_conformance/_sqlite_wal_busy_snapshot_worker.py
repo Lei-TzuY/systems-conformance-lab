@@ -63,14 +63,16 @@ def _run() -> bytes:
             retained_value = _read_value(reader)
             if retained_value != 0:
                 raise RuntimeError(
-                    f"stale reader snapshot changed after failed upgrade: {retained_value}"
+                    "stale reader snapshot changed after failed upgrade: "
+                    f"{retained_value}"
                 )
             reader.rollback()
 
             refreshed_value = _read_value(reader)
             if refreshed_value != 1:
                 raise RuntimeError(
-                    f"fresh read mismatch after stale reader rollback: {refreshed_value}"
+                    "fresh read mismatch after stale reader rollback: "
+                    f"{refreshed_value}"
                 )
 
             payload = {
