@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 
 
 _WORKER_MODULE = "systems_conformance._sqlite_wal_crash_recovery_worker"
