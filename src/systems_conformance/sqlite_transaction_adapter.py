@@ -25,10 +25,11 @@ class SQLiteTransactionTarget:
 
     Each input creates a fresh database, applies setup statements in autocommit mode,
     runs one explicit transaction program, finalizes it according to ``finalize``,
-    then executes a post-finalization observation query. ``journal_mode`` selects a
-    concrete SQLite rollback-journal (``delete``) or WAL storage path, while
-    ``synchronous`` selects SQLite's ``NORMAL`` or ``FULL`` durability policy. By
-    default the delete-mode worker uses an in-memory database; WAL always uses an
+    then executes a post-finalization observation query. ``begin_mode`` selects when
+    SQLite acquires transaction locks (``deferred``, ``immediate``, or ``exclusive``),
+    ``journal_mode`` selects a concrete rollback-journal (``delete``) or WAL storage
+    path, and ``synchronous`` selects SQLite's ``NORMAL`` or ``FULL`` durability policy.
+    By default the delete-mode worker uses an in-memory database; WAL always uses an
     internally managed temporary database file because SQLite cannot provide real WAL
     semantics for ``:memory:``. ``reopen_before_observe`` also selects a file-backed
     database and closes/reopens SQLite before the observation. The worker emits a
@@ -53,6 +54,7 @@ class SQLiteTransactionTarget:
     foreign_keys: bool = True
     enable_faults: bool = False
     reopen_before_observe: bool = False
+    begin_mode: Literal["deferred", "immediate", "exclusive"] = "deferred"
     journal_mode: Literal["delete", "wal"] = "delete"
     synchronous: Literal["normal", "full"] = "full"
     max_statements: int = 64
@@ -78,6 +80,8 @@ class SQLiteTransactionTarget:
             raise TypeError("enable_faults must be a bool")
         if not isinstance(self.reopen_before_observe, bool):
             raise TypeError("reopen_before_observe must be a bool")
+        if self.begin_mode not in {"deferred", "immediate", "exclusive"}:
+            raise ValueError("begin_mode must be 'deferred', 'immediate', or 'exclusive'")
         if self.journal_mode not in {"delete", "wal"}:
             raise ValueError("journal_mode must be 'delete' or 'wal'")
         if self.synchronous not in {"normal", "full"}:
@@ -175,6 +179,8 @@ class SQLiteTransactionTarget:
                 if self.reopen_before_observe
                 else "--same-connection-observe"
             ),
+            "--begin-mode",
+            self.begin_mode,
             "--journal-mode",
             self.journal_mode,
             "--synchronous",
