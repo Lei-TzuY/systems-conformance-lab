@@ -18,7 +18,9 @@ def _read_value(connection: sqlite3.Connection) -> int:
 
 
 def _run() -> bytes:
-    with tempfile.TemporaryDirectory(prefix="systems-conformance-sqlite-wal-busy-snapshot-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="systems-conformance-sqlite-wal-busy-snapshot-"
+    ) as directory:
         database = str(Path(directory) / "case.sqlite")
         bootstrap = sqlite3.connect(database, isolation_level=None)
         try:
