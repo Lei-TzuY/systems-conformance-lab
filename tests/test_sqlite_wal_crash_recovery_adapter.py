@@ -49,6 +49,38 @@ def test_committed_wal_update_survives_writer_crash_before_normal_close() -> Non
     }
 
 
+@pytest.mark.parametrize(
+    ("commit_before_crash", "writer_checkpoint", "expected_recovered_value"),
+    [
+        (False, "uncommitted_update_ready", 0),
+        (True, "committed_update_ready", 1),
+    ],
+)
+def test_fresh_child_process_observes_recovered_wal_state(
+    commit_before_crash: bool,
+    writer_checkpoint: str,
+    expected_recovered_value: int,
+) -> None:
+    result = _execute(
+        SQLiteWALCrashRecoveryTarget(
+            commit_before_crash=commit_before_crash,
+            recover_in_child=True,
+        )
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0, result.stderr.text
+    assert result.stderr.text == ""
+    assert json.loads(result.stdout.text) == {
+        "journal_mode": "wal",
+        "writer_checkpoint": writer_checkpoint,
+        "writer_terminated": True,
+        "recovered_value": expected_recovered_value,
+        "fresh_committed_value": 2,
+        "observer_recovered_value": expected_recovered_value,
+    }
+
+
 def test_pinned_reader_survives_uncommitted_writer_crash_and_fresh_commit() -> None:
     result = _execute(SQLiteWALCrashRecoveryTarget(pin_reader_snapshot=True))
 
@@ -137,6 +169,7 @@ def test_crash_modes_are_bound_into_command_identity() -> None:
         pin_reader_snapshot=True,
         checkpoint_after_crash=True,
     ).as_command_target()
+    child_observer = SQLiteWALCrashRecoveryTarget(recover_in_child=True).as_command_target()
 
     assert committed.argv == (*baseline.argv, "--commit-before-crash")
     assert pinned.argv == (*baseline.argv, "--pin-reader-snapshot")
@@ -146,6 +179,7 @@ def test_crash_modes_are_bound_into_command_identity() -> None:
         "--pin-reader-snapshot",
     )
     assert checkpointed.argv == (*combined.argv, "--checkpoint-after-crash")
+    assert child_observer.argv == (*baseline.argv, "--recover-in-child")
 
 
 def test_wal_crash_recovery_target_rejects_nonempty_untrusted_input() -> None:
@@ -154,6 +188,7 @@ def test_wal_crash_recovery_target_rejects_nonempty_untrusted_input() -> None:
             commit_before_crash=True,
             pin_reader_snapshot=True,
             checkpoint_after_crash=True,
+            recover_in_child=True,
         ),
         b"SELECT 1",
     )
@@ -172,6 +207,7 @@ def test_real_harness_repeats_wal_crash_recovery_deterministically() -> None:
         commit_before_crash=True,
         pin_reader_snapshot=True,
         checkpoint_after_crash=True,
+        recover_in_child=True,
     )
     harness = DifferentialHarness(
         candidate=target.as_command_target(),
