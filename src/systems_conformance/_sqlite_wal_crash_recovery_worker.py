@@ -115,7 +115,7 @@ def main() -> int:
         return 2
     try:
         sys.stdout.buffer.write(_run())
-    except Exception as exc:
+    except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
         print(f"target_error: {exc}", file=sys.stderr)
         return 1
     return 0
