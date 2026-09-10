@@ -6,7 +6,6 @@ import sys
 import tempfile
 from pathlib import Path
 
-
 _EXPECTED_BUSY_SNAPSHOT = sqlite3.SQLITE_BUSY_SNAPSHOT
 
 
