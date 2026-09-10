@@ -47,7 +47,10 @@ def test_sqlite_target_returns_canonical_rows_and_blobs() -> None:
     )
 
     assert result.infrastructure_error is None
-    assert result.exit_code == 0
+    assert result.exit_code == 0, (
+        f"sqlite target exited {result.exit_code}; "
+        f"stderr={result.stderr.text!r}; stdout={result.stdout.text!r}"
+    )
     assert result.stderr.text == ""
     assert json.loads(result.stdout.text) == {
         "columns": ["id", "name", "payload"],
