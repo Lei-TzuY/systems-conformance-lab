@@ -11,20 +11,25 @@ import time
 _WORKER_MODULE = "systems_conformance._sqlite_wal_crash_recovery_worker"
 
 
-def _writer(database: str) -> int:
+def _writer(database: str, *, commit_before_crash: bool) -> int:
     connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
     try:
         connection.execute("PRAGMA busy_timeout = 0")
         connection.execute("BEGIN IMMEDIATE")
         connection.execute("UPDATE items SET v = 1")
-        print("READY", flush=True)
+        if commit_before_crash:
+            connection.commit()
+            marker = "COMMITTED_READY"
+        else:
+            marker = "UNCOMMITTED_READY"
+        print(marker, flush=True)
         while True:
             time.sleep(60.0)
     finally:
         connection.close()
 
 
-def _run() -> bytes:
+def _run(*, commit_before_crash: bool) -> bytes:
     with tempfile.TemporaryDirectory(
         prefix="systems-conformance-sqlite-wal-crash-recovery-"
     ) as directory:
@@ -41,8 +46,10 @@ def _run() -> bytes:
         finally:
             bootstrap.close()
 
+        writer_mode = "--writer-committed" if commit_before_crash else "--writer-uncommitted"
+        expected_marker = "COMMITTED_READY" if commit_before_crash else "UNCOMMITTED_READY"
         process = subprocess.Popen(
-            [sys.executable, "-m", _WORKER_MODULE, "--writer", database],
+            [sys.executable, "-m", _WORKER_MODULE, writer_mode, database],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -52,7 +59,7 @@ def _run() -> bytes:
             if process.stdout is None:
                 raise RuntimeError("writer stdout pipe unavailable")
             marker = process.stdout.readline().strip()
-            if marker != "READY":
+            if marker != expected_marker:
                 stderr = ""
                 if process.stderr is not None:
                     stderr = process.stderr.read().strip()
@@ -77,8 +84,10 @@ def _run() -> bytes:
         try:
             recovered.execute("PRAGMA busy_timeout = 0")
             row = recovered.execute("SELECT v FROM items").fetchone()
-            if row is None or int(row[0]) != 0:
-                raise RuntimeError(f"uncommitted writer state survived crash: {row!r}")
+            expected_recovered_value = 1 if commit_before_crash else 0
+            if row is None or int(row[0]) != expected_recovered_value:
+                state = "committed" if commit_before_crash else "uncommitted"
+                raise RuntimeError(f"{state} writer recovery mismatch: {row!r}")
             recovered_value = int(row[0])
 
             recovered.execute("BEGIN IMMEDIATE")
@@ -92,7 +101,9 @@ def _run() -> bytes:
 
         payload = {
             "journal_mode": "wal",
-            "writer_checkpoint": "uncommitted_update_ready",
+            "writer_checkpoint": (
+                "committed_update_ready" if commit_before_crash else "uncommitted_update_ready"
+            ),
             "writer_terminated": True,
             "recovered_value": recovered_value,
             "fresh_committed_value": 2,
@@ -101,9 +112,13 @@ def _run() -> bytes:
 
 
 def main() -> int:
-    if len(sys.argv) == 3 and sys.argv[1] == "--writer":
-        return _writer(sys.argv[2])
-    if len(sys.argv) != 1:
+    if len(sys.argv) == 3 and sys.argv[1] in {"--writer-uncommitted", "--writer-committed"}:
+        return _writer(sys.argv[2], commit_before_crash=sys.argv[1] == "--writer-committed")
+    if len(sys.argv) == 1:
+        commit_before_crash = False
+    elif len(sys.argv) == 2 and sys.argv[1] == "--commit-before-crash":
+        commit_before_crash = True
+    else:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
     if sys.stdin.buffer.read(1):
@@ -113,7 +128,7 @@ def main() -> int:
         )
         return 2
     try:
-        sys.stdout.buffer.write(_run())
+        sys.stdout.buffer.write(_run(commit_before_crash=commit_before_crash))
     except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
         print(f"target_error: {exc}", file=sys.stderr)
         return 1

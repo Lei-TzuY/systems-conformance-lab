@@ -32,8 +32,30 @@ def test_wal_writer_crash_preserves_committed_state_and_allows_recovery() -> Non
     }
 
 
+def test_committed_wal_update_survives_writer_crash_before_normal_close() -> None:
+    result = _execute(SQLiteWALCrashRecoveryTarget(commit_before_crash=True))
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0, result.stderr.text
+    assert result.stderr.text == ""
+    assert json.loads(result.stdout.text) == {
+        "journal_mode": "wal",
+        "writer_checkpoint": "committed_update_ready",
+        "writer_terminated": True,
+        "recovered_value": 1,
+        "fresh_committed_value": 2,
+    }
+
+
+def test_commit_before_crash_is_bound_into_command_identity() -> None:
+    uncommitted = SQLiteWALCrashRecoveryTarget().as_command_target()
+    committed = SQLiteWALCrashRecoveryTarget(commit_before_crash=True).as_command_target()
+
+    assert committed.argv == (*uncommitted.argv, "--commit-before-crash")
+
+
 def test_wal_crash_recovery_target_rejects_nonempty_untrusted_input() -> None:
-    result = _execute(SQLiteWALCrashRecoveryTarget(), b"SELECT 1")
+    result = _execute(SQLiteWALCrashRecoveryTarget(commit_before_crash=True), b"SELECT 1")
 
     assert result.infrastructure_error is None
     assert result.exit_code == 2
@@ -45,9 +67,10 @@ def test_wal_crash_recovery_target_rejects_nonempty_untrusted_input() -> None:
 
 
 def test_real_harness_repeats_wal_crash_recovery_deterministically() -> None:
+    target = SQLiteWALCrashRecoveryTarget(commit_before_crash=True)
     harness = DifferentialHarness(
-        candidate=SQLiteWALCrashRecoveryTarget().as_command_target(),
-        oracle=SQLiteWALCrashRecoveryTarget().as_command_target(),
+        candidate=target.as_command_target(),
+        oracle=target.as_command_target(),
         timeout_seconds=4.0,
     )
 
