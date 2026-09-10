@@ -36,6 +36,42 @@ def _read_value(connection: sqlite3.Connection) -> int:
     return int(row[0])
 
 
+def _observer(database: str) -> int:
+    connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+    try:
+        connection.execute("PRAGMA busy_timeout = 0")
+        print(_read_value(connection), flush=True)
+    finally:
+        connection.close()
+    return 0
+
+
+def _read_value_in_child(database: str) -> int:
+    completed = subprocess.run(
+        [sys.executable, "-m", _WORKER_MODULE, "--observer", database],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        timeout=2.0,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "recovery observer failed: "
+            f"exit={completed.returncode} stderr={completed.stderr.strip()!r}"
+        )
+    if completed.stderr.strip():
+        raise RuntimeError(
+            f"recovery observer emitted stderr: {completed.stderr.strip()!r}"
+        )
+    value = completed.stdout.strip()
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise RuntimeError(f"invalid recovery observer value: {value!r}") from exc
+
+
 def _checkpoint(connection: sqlite3.Connection) -> tuple[int, int, int]:
     row = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
     if row is None or len(row) != 3:
@@ -48,6 +84,7 @@ def _run(
     commit_before_crash: bool,
     pin_reader_snapshot: bool,
     checkpoint_after_crash: bool,
+    recover_in_child: bool,
 ) -> bytes:
     if checkpoint_after_crash and not (commit_before_crash and pin_reader_snapshot):
         raise RuntimeError(
@@ -116,10 +153,19 @@ def _run(
                 process.kill()
                 process.communicate(timeout=2.0)
 
+        expected_recovered_value = 1 if commit_before_crash else 0
+        observer_recovered_value: int | None = None
+        if recover_in_child:
+            observer_recovered_value = _read_value_in_child(database)
+            if observer_recovered_value != expected_recovered_value:
+                state = "committed" if commit_before_crash else "uncommitted"
+                raise RuntimeError(
+                    f"{state} child observer recovery mismatch: {observer_recovered_value!r}"
+                )
+
         recovered = sqlite3.connect(database, isolation_level=None, timeout=0.0)
         try:
             recovered.execute("PRAGMA busy_timeout = 0")
-            expected_recovered_value = 1 if commit_before_crash else 0
             recovered_value = _read_value(recovered)
             if recovered_value != expected_recovered_value:
                 state = "committed" if commit_before_crash else "uncommitted"
@@ -198,6 +244,8 @@ def _run(
             "recovered_value": recovered_value,
             "fresh_committed_value": fresh_committed_value,
         }
+        if recover_in_child:
+            payload["observer_recovered_value"] = observer_recovered_value
         if pin_reader_snapshot:
             payload.update(
                 {
@@ -219,10 +267,13 @@ def _run(
 def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] in {"--writer-uncommitted", "--writer-committed"}:
         return _writer(sys.argv[2], commit_before_crash=sys.argv[1] == "--writer-committed")
+    if len(sys.argv) == 3 and sys.argv[1] == "--observer":
+        return _observer(sys.argv[2])
 
     commit_before_crash = "--commit-before-crash" in sys.argv[1:]
     pin_reader_snapshot = "--pin-reader-snapshot" in sys.argv[1:]
     checkpoint_after_crash = "--checkpoint-after-crash" in sys.argv[1:]
+    recover_in_child = "--recover-in-child" in sys.argv[1:]
     expected_arguments = set()
     if commit_before_crash:
         expected_arguments.add("--commit-before-crash")
@@ -230,6 +281,8 @@ def main() -> int:
         expected_arguments.add("--pin-reader-snapshot")
     if checkpoint_after_crash:
         expected_arguments.add("--checkpoint-after-crash")
+    if recover_in_child:
+        expected_arguments.add("--recover-in-child")
     if len(sys.argv[1:]) != len(expected_arguments) or set(sys.argv[1:]) != expected_arguments:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
@@ -246,6 +299,7 @@ def main() -> int:
                 commit_before_crash=commit_before_crash,
                 pin_reader_snapshot=pin_reader_snapshot,
                 checkpoint_after_crash=checkpoint_after_crash,
+                recover_in_child=recover_in_child,
             )
         )
     except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
