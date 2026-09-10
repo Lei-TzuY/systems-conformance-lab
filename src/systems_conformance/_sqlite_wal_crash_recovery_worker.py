@@ -50,8 +50,7 @@ def _read_value_in_child(database: str) -> int:
     completed = subprocess.run(
         [sys.executable, "-m", _WORKER_MODULE, "--observer", database],
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         timeout=2.0,
         check=False,
