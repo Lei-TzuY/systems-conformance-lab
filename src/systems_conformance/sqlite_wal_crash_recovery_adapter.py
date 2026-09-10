@@ -13,6 +13,7 @@ class SQLiteWALCrashRecoveryTarget:
     commit_before_crash: bool = False
     pin_reader_snapshot: bool = False
     checkpoint_after_crash: bool = False
+    checkpoint_in_child: bool = False
     recover_in_child: bool = False
 
     def __post_init__(self) -> None:
@@ -22,6 +23,8 @@ class SQLiteWALCrashRecoveryTarget:
             raise ValueError(
                 "checkpoint_after_crash requires commit_before_crash and pin_reader_snapshot"
             )
+        if self.checkpoint_in_child and not self.checkpoint_after_crash:
+            raise ValueError("checkpoint_in_child requires checkpoint_after_crash")
 
     def as_command_target(self) -> CommandTarget:
         argv = [sys.executable, "-m", "systems_conformance._sqlite_wal_crash_recovery_worker"]
@@ -31,6 +34,8 @@ class SQLiteWALCrashRecoveryTarget:
             argv.append("--pin-reader-snapshot")
         if self.checkpoint_after_crash:
             argv.append("--checkpoint-after-crash")
+        if self.checkpoint_in_child:
+            argv.append("--checkpoint-in-child")
         if self.recover_in_child:
             argv.append("--recover-in-child")
         return CommandTarget(tuple(argv))
