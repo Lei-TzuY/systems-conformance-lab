@@ -7,7 +7,7 @@ import tempfile
 from pathlib import Path
 
 
-_EXPECTED_BUSY_SNAPSHOT = getattr(sqlite3, "SQLITE_BUSY_SNAPSHOT", 517)
+_EXPECTED_BUSY_SNAPSHOT = sqlite3.SQLITE_BUSY_SNAPSHOT
 
 
 def _read_value(connection: sqlite3.Connection) -> int:
@@ -51,7 +51,7 @@ def _run() -> bytes:
             try:
                 reader.execute("UPDATE items SET v = 2")
             except sqlite3.OperationalError as exc:
-                error_code = getattr(exc, "sqlite_errorcode", None)
+                error_code = exc.sqlite_errorcode
                 if error_code != _EXPECTED_BUSY_SNAPSHOT:
                     raise RuntimeError(
                         "stale reader upgrade produced unexpected SQLite error "
