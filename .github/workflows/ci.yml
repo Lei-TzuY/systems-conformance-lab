@@ -20,12 +20,4 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest
-      - name: Capture Ruff diagnostics
-        run: python -m ruff check . --output-format=json > ruff.json
-        continue-on-error: true
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ruff-${{ matrix.os }}-${{ matrix.python-version }}
-          path: ruff.json
-      - name: Enforce Ruff
-        run: python -c "import json,sys; sys.exit(1 if json.load(open('ruff.json', encoding='utf-8')) else 0)"
+      - run: python -m ruff check .
