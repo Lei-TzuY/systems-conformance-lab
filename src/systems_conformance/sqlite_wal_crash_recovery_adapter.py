@@ -13,6 +13,7 @@ class SQLiteWALCrashRecoveryTarget:
     commit_before_crash: bool = False
     pin_reader_snapshot: bool = False
     checkpoint_after_crash: bool = False
+    recover_in_child: bool = False
 
     def __post_init__(self) -> None:
         if self.checkpoint_after_crash and not (
@@ -30,4 +31,6 @@ class SQLiteWALCrashRecoveryTarget:
             argv.append("--pin-reader-snapshot")
         if self.checkpoint_after_crash:
             argv.append("--checkpoint-after-crash")
+        if self.recover_in_child:
+            argv.append("--recover-in-child")
         return CommandTarget(tuple(argv))
