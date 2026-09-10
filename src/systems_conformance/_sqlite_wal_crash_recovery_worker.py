@@ -9,6 +9,9 @@ import time
 from pathlib import Path
 
 
+_WORKER_MODULE = "systems_conformance._sqlite_wal_crash_recovery_worker"
+
+
 def _writer(database: str) -> int:
     connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
     try:
@@ -40,7 +43,7 @@ def _run() -> bytes:
             bootstrap.close()
 
         process = subprocess.Popen(
-            [sys.executable, "-m", __name__, "--writer", database],
+            [sys.executable, "-m", _WORKER_MODULE, "--writer", database],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
