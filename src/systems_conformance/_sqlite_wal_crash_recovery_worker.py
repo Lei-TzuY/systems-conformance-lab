@@ -58,14 +58,17 @@ def _run() -> bytes:
                 if process.stderr is not None:
                     stderr = process.stderr.read().strip()
                 raise RuntimeError(
-                    f"writer failed before crash checkpoint: marker={marker!r} stderr={stderr!r}"
+                    "writer failed before crash checkpoint: "
+                    f"marker={marker!r} stderr={stderr!r}"
                 )
             process.kill()
             _, stderr = process.communicate(timeout=2.0)
             if process.returncode == 0:
                 raise RuntimeError("writer unexpectedly exited successfully after forced kill")
             if stderr.strip():
-                raise RuntimeError(f"writer emitted stderr before forced kill: {stderr.strip()!r}")
+                raise RuntimeError(
+                    f"writer emitted stderr before forced kill: {stderr.strip()!r}"
+                )
         finally:
             if process.poll() is None:
                 process.kill()
