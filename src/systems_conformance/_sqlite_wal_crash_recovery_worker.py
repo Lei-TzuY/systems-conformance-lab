@@ -78,17 +78,55 @@ def _checkpoint(connection: sqlite3.Connection) -> tuple[int, int, int]:
     return int(row[0]), int(row[1]), int(row[2])
 
 
+def _checkpoint_worker(database: str) -> int:
+    connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+    try:
+        connection.execute("PRAGMA busy_timeout = 0")
+        busy, _, _ = _checkpoint(connection)
+        print(busy, flush=True)
+    finally:
+        connection.close()
+    return 0
+
+
+def _run_checkpoint_in_child(database: str) -> int:
+    completed = subprocess.run(
+        [sys.executable, "-m", _WORKER_MODULE, "--checkpoint", database],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=2.0,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "checkpoint worker failed: "
+            f"exit={completed.returncode} stderr={completed.stderr.strip()!r}"
+        )
+    if completed.stderr.strip():
+        raise RuntimeError(
+            f"checkpoint worker emitted stderr: {completed.stderr.strip()!r}"
+        )
+    value = completed.stdout.strip()
+    if value not in {"0", "1"}:
+        raise RuntimeError(f"invalid checkpoint worker busy result: {value!r}")
+    return int(value)
+
+
 def _run(
     *,
     commit_before_crash: bool,
     pin_reader_snapshot: bool,
     checkpoint_after_crash: bool,
+    checkpoint_in_child: bool,
     recover_in_child: bool,
 ) -> bytes:
     if checkpoint_after_crash and not (commit_before_crash and pin_reader_snapshot):
         raise RuntimeError(
             "checkpoint-after-crash requires committed writer and pinned reader"
         )
+    if checkpoint_in_child and not checkpoint_after_crash:
+        raise RuntimeError("checkpoint-in-child requires checkpoint-after-crash")
 
     with tempfile.TemporaryDirectory(
         prefix="systems-conformance-sqlite-wal-crash-recovery-"
@@ -183,12 +221,16 @@ def _run(
             blocked_checkpoint_busy: bool | None = None
             released_checkpoint_busy: bool | None = None
             if checkpoint_after_crash:
-                blocked_busy, blocked_log, blocked_checkpointed = _checkpoint(recovered)
+                if checkpoint_in_child:
+                    blocked_busy = _run_checkpoint_in_child(database)
+                    blocked_details: object = blocked_busy
+                else:
+                    blocked_busy, blocked_log, blocked_checkpointed = _checkpoint(recovered)
+                    blocked_details = (blocked_busy, blocked_log, blocked_checkpointed)
                 if blocked_busy != 1:
                     raise RuntimeError(
                         "TRUNCATE checkpoint unexpectedly completed while pre-crash reader "
-                        "snapshot was pinned: "
-                        f"{(blocked_busy, blocked_log, blocked_checkpointed)!r}"
+                        f"snapshot was pinned: {blocked_details!r}"
                     )
                 blocked_checkpoint_busy = True
 
@@ -213,11 +255,16 @@ def _run(
                 pinned_reader = None
 
                 if checkpoint_after_crash:
-                    released_busy, released_log, released_checkpointed = _checkpoint(recovered)
+                    if checkpoint_in_child:
+                        released_busy = _run_checkpoint_in_child(database)
+                        released_details: object = released_busy
+                    else:
+                        released_busy, released_log, released_checkpointed = _checkpoint(recovered)
+                        released_details = (released_busy, released_log, released_checkpointed)
                     if released_busy != 0:
                         raise RuntimeError(
                             "TRUNCATE checkpoint remained busy after pre-crash reader release: "
-                            f"{(released_busy, released_log, released_checkpointed)!r}"
+                            f"{released_details!r}"
                         )
                     released_checkpoint_busy = False
 
@@ -260,6 +307,8 @@ def _run(
                     "released_checkpoint_busy": released_checkpoint_busy,
                 }
             )
+        if checkpoint_in_child:
+            payload["checkpoint_process"] = "child"
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
 
@@ -268,10 +317,13 @@ def main() -> int:
         return _writer(sys.argv[2], commit_before_crash=sys.argv[1] == "--writer-committed")
     if len(sys.argv) == 3 and sys.argv[1] == "--observer":
         return _observer(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "--checkpoint":
+        return _checkpoint_worker(sys.argv[2])
 
     commit_before_crash = "--commit-before-crash" in sys.argv[1:]
     pin_reader_snapshot = "--pin-reader-snapshot" in sys.argv[1:]
     checkpoint_after_crash = "--checkpoint-after-crash" in sys.argv[1:]
+    checkpoint_in_child = "--checkpoint-in-child" in sys.argv[1:]
     recover_in_child = "--recover-in-child" in sys.argv[1:]
     expected_arguments = set()
     if commit_before_crash:
@@ -280,6 +332,8 @@ def main() -> int:
         expected_arguments.add("--pin-reader-snapshot")
     if checkpoint_after_crash:
         expected_arguments.add("--checkpoint-after-crash")
+    if checkpoint_in_child:
+        expected_arguments.add("--checkpoint-in-child")
     if recover_in_child:
         expected_arguments.add("--recover-in-child")
     if len(sys.argv[1:]) != len(expected_arguments) or set(sys.argv[1:]) != expected_arguments:
@@ -298,6 +352,7 @@ def main() -> int:
                 commit_before_crash=commit_before_crash,
                 pin_reader_snapshot=pin_reader_snapshot,
                 checkpoint_after_crash=checkpoint_after_crash,
+                checkpoint_in_child=checkpoint_in_child,
                 recover_in_child=recover_in_child,
             )
         )
