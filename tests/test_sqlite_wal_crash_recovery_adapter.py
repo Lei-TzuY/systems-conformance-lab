@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from systems_conformance.harness import DifferentialHarness
 from systems_conformance.sqlite_wal_crash_recovery_adapter import (
     SQLiteWALCrashRecoveryTarget,
@@ -88,6 +90,40 @@ def test_pinned_reader_keeps_snapshot_across_committed_writer_crash() -> None:
     }
 
 
+def test_checkpoint_recovery_blocks_on_precrash_snapshot_then_truncates() -> None:
+    result = _execute(
+        SQLiteWALCrashRecoveryTarget(
+            commit_before_crash=True,
+            pin_reader_snapshot=True,
+            checkpoint_after_crash=True,
+        )
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0, result.stderr.text
+    assert result.stderr.text == ""
+    assert json.loads(result.stdout.text) == {
+        "journal_mode": "wal",
+        "writer_checkpoint": "committed_update_ready",
+        "writer_terminated": True,
+        "recovered_value": 1,
+        "fresh_committed_value": 2,
+        "reader_snapshot_pinned": True,
+        "pinned_reader_value": 0,
+        "post_release_value": 2,
+        "blocked_checkpoint_busy": True,
+        "released_checkpoint_busy": False,
+    }
+
+
+def test_checkpoint_recovery_requires_committed_crash_and_pinned_reader() -> None:
+    with pytest.raises(
+        ValueError,
+        match="checkpoint_after_crash requires commit_before_crash and pin_reader_snapshot",
+    ):
+        SQLiteWALCrashRecoveryTarget(checkpoint_after_crash=True)
+
+
 def test_crash_modes_are_bound_into_command_identity() -> None:
     baseline = SQLiteWALCrashRecoveryTarget().as_command_target()
     committed = SQLiteWALCrashRecoveryTarget(commit_before_crash=True).as_command_target()
@@ -95,6 +131,11 @@ def test_crash_modes_are_bound_into_command_identity() -> None:
     combined = SQLiteWALCrashRecoveryTarget(
         commit_before_crash=True,
         pin_reader_snapshot=True,
+    ).as_command_target()
+    checkpointed = SQLiteWALCrashRecoveryTarget(
+        commit_before_crash=True,
+        pin_reader_snapshot=True,
+        checkpoint_after_crash=True,
     ).as_command_target()
 
     assert committed.argv == (*baseline.argv, "--commit-before-crash")
@@ -104,6 +145,7 @@ def test_crash_modes_are_bound_into_command_identity() -> None:
         "--commit-before-crash",
         "--pin-reader-snapshot",
     )
+    assert checkpointed.argv == (*combined.argv, "--checkpoint-after-crash")
 
 
 def test_wal_crash_recovery_target_rejects_nonempty_untrusted_input() -> None:
@@ -111,6 +153,7 @@ def test_wal_crash_recovery_target_rejects_nonempty_untrusted_input() -> None:
         SQLiteWALCrashRecoveryTarget(
             commit_before_crash=True,
             pin_reader_snapshot=True,
+            checkpoint_after_crash=True,
         ),
         b"SELECT 1",
     )
@@ -128,6 +171,7 @@ def test_real_harness_repeats_wal_crash_recovery_deterministically() -> None:
     target = SQLiteWALCrashRecoveryTarget(
         commit_before_crash=True,
         pin_reader_snapshot=True,
+        checkpoint_after_crash=True,
     )
     harness = DifferentialHarness(
         candidate=target.as_command_target(),
