@@ -29,7 +29,14 @@ def _writer(database: str, *, commit_before_crash: bool) -> int:
         connection.close()
 
 
-def _run(*, commit_before_crash: bool) -> bytes:
+def _read_value(connection: sqlite3.Connection) -> int:
+    row = connection.execute("SELECT v FROM items").fetchone()
+    if row is None:
+        raise RuntimeError("items row missing")
+    return int(row[0])
+
+
+def _run(*, commit_before_crash: bool, pin_reader_snapshot: bool) -> bytes:
     with tempfile.TemporaryDirectory(
         prefix="systems-conformance-sqlite-wal-crash-recovery-"
     ) as directory:
@@ -45,6 +52,18 @@ def _run(*, commit_before_crash: bool) -> bytes:
             bootstrap.execute("INSERT INTO items VALUES (0)")
         finally:
             bootstrap.close()
+
+        pinned_reader: sqlite3.Connection | None = None
+        pinned_reader_value: int | None = None
+        if pin_reader_snapshot:
+            pinned_reader = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+            pinned_reader.execute("PRAGMA busy_timeout = 0")
+            pinned_reader.execute("BEGIN")
+            pinned_reader_value = _read_value(pinned_reader)
+            if pinned_reader_value != 0:
+                raise RuntimeError(
+                    f"reader failed to pin initial snapshot: {pinned_reader_value!r}"
+                )
 
         writer_mode = "--writer-committed" if commit_before_crash else "--writer-uncommitted"
         expected_marker = "COMMITTED_READY" if commit_before_crash else "UNCOMMITTED_READY"
@@ -83,21 +102,53 @@ def _run(*, commit_before_crash: bool) -> bytes:
         recovered = sqlite3.connect(database, isolation_level=None, timeout=0.0)
         try:
             recovered.execute("PRAGMA busy_timeout = 0")
-            row = recovered.execute("SELECT v FROM items").fetchone()
             expected_recovered_value = 1 if commit_before_crash else 0
-            if row is None or int(row[0]) != expected_recovered_value:
+            recovered_value = _read_value(recovered)
+            if recovered_value != expected_recovered_value:
                 state = "committed" if commit_before_crash else "uncommitted"
-                raise RuntimeError(f"{state} writer recovery mismatch: {row!r}")
-            recovered_value = int(row[0])
+                raise RuntimeError(
+                    f"{state} writer recovery mismatch: {recovered_value!r}"
+                )
+
+            if pinned_reader is not None:
+                snapshot_after_crash = _read_value(pinned_reader)
+                if snapshot_after_crash != 0:
+                    raise RuntimeError(
+                        "pinned reader snapshot changed after writer crash: "
+                        f"{snapshot_after_crash!r}"
+                    )
 
             recovered.execute("BEGIN IMMEDIATE")
             recovered.execute("UPDATE items SET v = 2")
             recovered.commit()
-            row = recovered.execute("SELECT v FROM items").fetchone()
-            if row is None or int(row[0]) != 2:
-                raise RuntimeError(f"fresh commit after recovery mismatch: {row!r}")
+            fresh_committed_value = _read_value(recovered)
+            if fresh_committed_value != 2:
+                raise RuntimeError(
+                    f"fresh commit after recovery mismatch: {fresh_committed_value!r}"
+                )
+
+            if pinned_reader is not None:
+                snapshot_after_fresh_commit = _read_value(pinned_reader)
+                if snapshot_after_fresh_commit != 0:
+                    raise RuntimeError(
+                        "pinned reader snapshot changed after fresh commit: "
+                        f"{snapshot_after_fresh_commit!r}"
+                    )
+                pinned_reader.rollback()
+                pinned_reader.close()
+                pinned_reader = None
+                post_release_value = _read_value(recovered)
+                if post_release_value != 2:
+                    raise RuntimeError(
+                        f"fresh state after reader release mismatch: {post_release_value!r}"
+                    )
+            else:
+                post_release_value = None
         finally:
             recovered.close()
+            if pinned_reader is not None:
+                pinned_reader.rollback()
+                pinned_reader.close()
 
         payload = {
             "journal_mode": "wal",
@@ -106,21 +157,34 @@ def _run(*, commit_before_crash: bool) -> bytes:
             ),
             "writer_terminated": True,
             "recovered_value": recovered_value,
-            "fresh_committed_value": 2,
+            "fresh_committed_value": fresh_committed_value,
         }
+        if pin_reader_snapshot:
+            payload.update(
+                {
+                    "reader_snapshot_pinned": True,
+                    "pinned_reader_value": pinned_reader_value,
+                    "post_release_value": post_release_value,
+                }
+            )
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
 
 def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] in {"--writer-uncommitted", "--writer-committed"}:
         return _writer(sys.argv[2], commit_before_crash=sys.argv[1] == "--writer-committed")
-    if len(sys.argv) == 1:
-        commit_before_crash = False
-    elif len(sys.argv) == 2 and sys.argv[1] == "--commit-before-crash":
-        commit_before_crash = True
-    else:
+
+    commit_before_crash = "--commit-before-crash" in sys.argv[1:]
+    pin_reader_snapshot = "--pin-reader-snapshot" in sys.argv[1:]
+    expected_arguments = set()
+    if commit_before_crash:
+        expected_arguments.add("--commit-before-crash")
+    if pin_reader_snapshot:
+        expected_arguments.add("--pin-reader-snapshot")
+    if len(sys.argv[1:]) != len(expected_arguments) or set(sys.argv[1:]) != expected_arguments:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
+
     if sys.stdin.buffer.read(1):
         print(
             "protocol_error: SQLite WAL crash recovery target requires empty input",
@@ -128,7 +192,12 @@ def main() -> int:
         )
         return 2
     try:
-        sys.stdout.buffer.write(_run(commit_before_crash=commit_before_crash))
+        sys.stdout.buffer.write(
+            _run(
+                commit_before_crash=commit_before_crash,
+                pin_reader_snapshot=pin_reader_snapshot,
+            )
+        )
     except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
         print(f"target_error: {exc}", file=sys.stderr)
         return 1
