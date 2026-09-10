@@ -17,14 +17,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _configure(connection: sqlite3.Connection, journal_mode: str) -> None:
-    connection.execute("PRAGMA busy_timeout = 0")
+def _set_journal_mode(connection: sqlite3.Connection, journal_mode: str) -> None:
     row = connection.execute(f"PRAGMA journal_mode = {journal_mode.upper()}").fetchone()
     actual = None if row is None else str(row[0]).lower()
     if actual != journal_mode:
         raise RuntimeError(
             f"SQLite journal mode unavailable: requested {journal_mode}, got {actual}"
         )
+
+
+def _configure_connection(connection: sqlite3.Connection) -> None:
+    connection.execute("PRAGMA busy_timeout = 0")
 
 
 def _begin(connection: sqlite3.Connection, mode: str) -> None:
@@ -37,14 +40,15 @@ def _run(*, journal_mode: str, holder_begin: str, contender_begin: str) -> bytes
         bootstrap = sqlite3.connect(database, isolation_level=None)
         try:
             bootstrap.execute("CREATE TABLE items(v INTEGER NOT NULL)")
+            _set_journal_mode(bootstrap, journal_mode)
         finally:
             bootstrap.close()
 
         holder = sqlite3.connect(database, isolation_level=None, timeout=0.0)
         contender = sqlite3.connect(database, isolation_level=None, timeout=0.0)
         try:
-            _configure(holder, journal_mode)
-            _configure(contender, journal_mode)
+            _configure_connection(holder)
+            _configure_connection(contender)
             _begin(holder, holder_begin)
             holder.execute("INSERT INTO items VALUES (1)")
 
