@@ -8,7 +8,6 @@ import sys
 import tempfile
 import time
 
-
 _WORKER_MODULE = "systems_conformance._sqlite_wal_crash_recovery_worker"
 
 
