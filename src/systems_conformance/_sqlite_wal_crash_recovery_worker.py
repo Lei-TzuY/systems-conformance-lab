@@ -36,7 +36,24 @@ def _read_value(connection: sqlite3.Connection) -> int:
     return int(row[0])
 
 
-def _run(*, commit_before_crash: bool, pin_reader_snapshot: bool) -> bytes:
+def _checkpoint(connection: sqlite3.Connection) -> tuple[int, int, int]:
+    row = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    if row is None or len(row) != 3:
+        raise RuntimeError(f"unexpected wal_checkpoint result: {row!r}")
+    return int(row[0]), int(row[1]), int(row[2])
+
+
+def _run(
+    *,
+    commit_before_crash: bool,
+    pin_reader_snapshot: bool,
+    checkpoint_after_crash: bool,
+) -> bytes:
+    if checkpoint_after_crash and not (commit_before_crash and pin_reader_snapshot):
+        raise RuntimeError(
+            "checkpoint-after-crash requires committed writer and pinned reader"
+        )
+
     with tempfile.TemporaryDirectory(
         prefix="systems-conformance-sqlite-wal-crash-recovery-"
     ) as directory:
@@ -118,6 +135,18 @@ def _run(*, commit_before_crash: bool, pin_reader_snapshot: bool) -> bytes:
                         f"{snapshot_after_crash!r}"
                     )
 
+            blocked_checkpoint_busy: bool | None = None
+            released_checkpoint_busy: bool | None = None
+            if checkpoint_after_crash:
+                blocked_busy, blocked_log, blocked_checkpointed = _checkpoint(recovered)
+                if blocked_busy != 1:
+                    raise RuntimeError(
+                        "TRUNCATE checkpoint unexpectedly completed while pre-crash reader "
+                        "snapshot was pinned: "
+                        f"{(blocked_busy, blocked_log, blocked_checkpointed)!r}"
+                    )
+                blocked_checkpoint_busy = True
+
             recovered.execute("BEGIN IMMEDIATE")
             recovered.execute("UPDATE items SET v = 2")
             recovered.commit()
@@ -137,6 +166,16 @@ def _run(*, commit_before_crash: bool, pin_reader_snapshot: bool) -> bytes:
                 pinned_reader.rollback()
                 pinned_reader.close()
                 pinned_reader = None
+
+                if checkpoint_after_crash:
+                    released_busy, released_log, released_checkpointed = _checkpoint(recovered)
+                    if released_busy != 0:
+                        raise RuntimeError(
+                            "TRUNCATE checkpoint remained busy after pre-crash reader release: "
+                            f"{(released_busy, released_log, released_checkpointed)!r}"
+                        )
+                    released_checkpoint_busy = False
+
                 post_release_value = _read_value(recovered)
                 if post_release_value != 2:
                     raise RuntimeError(
@@ -167,6 +206,13 @@ def _run(*, commit_before_crash: bool, pin_reader_snapshot: bool) -> bytes:
                     "post_release_value": post_release_value,
                 }
             )
+        if checkpoint_after_crash:
+            payload.update(
+                {
+                    "blocked_checkpoint_busy": blocked_checkpoint_busy,
+                    "released_checkpoint_busy": released_checkpoint_busy,
+                }
+            )
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
 
@@ -176,11 +222,14 @@ def main() -> int:
 
     commit_before_crash = "--commit-before-crash" in sys.argv[1:]
     pin_reader_snapshot = "--pin-reader-snapshot" in sys.argv[1:]
+    checkpoint_after_crash = "--checkpoint-after-crash" in sys.argv[1:]
     expected_arguments = set()
     if commit_before_crash:
         expected_arguments.add("--commit-before-crash")
     if pin_reader_snapshot:
         expected_arguments.add("--pin-reader-snapshot")
+    if checkpoint_after_crash:
+        expected_arguments.add("--checkpoint-after-crash")
     if len(sys.argv[1:]) != len(expected_arguments) or set(sys.argv[1:]) != expected_arguments:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
@@ -196,6 +245,7 @@ def main() -> int:
             _run(
                 commit_before_crash=commit_before_crash,
                 pin_reader_snapshot=pin_reader_snapshot,
+                checkpoint_after_crash=checkpoint_after_crash,
             )
         )
     except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
