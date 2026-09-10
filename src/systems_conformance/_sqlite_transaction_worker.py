@@ -70,6 +70,11 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     persistence = parser.add_mutually_exclusive_group(required=True)
     persistence.add_argument("--reopen-before-observe", action="store_true")
     persistence.add_argument("--same-connection-observe", action="store_true")
+    parser.add_argument(
+        "--begin-mode",
+        choices=("deferred", "immediate", "exclusive"),
+        default="deferred",
+    )
     parser.add_argument("--journal-mode", choices=("delete", "wal"), default="delete")
     parser.add_argument("--synchronous", choices=("normal", "full"), default="full")
     parser.add_argument("--max-statements", required=True, type=_positive_int)
@@ -275,6 +280,7 @@ def _run(
     foreign_keys: bool,
     enable_faults: bool,
     reopen_before_observe: bool,
+    begin_mode: str,
     journal_mode: str,
     synchronous: str,
     max_statements: int,
@@ -308,7 +314,7 @@ def _run(
                 connection.execute(statement)
 
             connection.set_authorizer(None)
-            connection.execute("BEGIN")
+            connection.execute(f"BEGIN {begin_mode.upper()}")
             connection.set_authorizer(_authorizer)
 
             transcript = []
@@ -358,6 +364,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             foreign_keys=args.foreign_keys,
             enable_faults=args.enable_faults,
             reopen_before_observe=args.reopen_before_observe,
+            begin_mode=args.begin_mode,
             journal_mode=args.journal_mode,
             synchronous=args.synchronous,
             max_statements=args.max_statements,
