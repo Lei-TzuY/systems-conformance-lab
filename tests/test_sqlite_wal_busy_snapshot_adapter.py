@@ -28,7 +28,7 @@ def test_stale_wal_reader_upgrade_reports_busy_snapshot() -> None:
         "journal_mode": "wal",
         "initial_value": 0,
         "writer_committed_value": 1,
-        "upgrade_error_code": getattr(sqlite3, "SQLITE_BUSY_SNAPSHOT", 517),
+        "upgrade_error_code": sqlite3.SQLITE_BUSY_SNAPSHOT,
         "retained_value": 0,
         "refreshed_value": 1,
     }
