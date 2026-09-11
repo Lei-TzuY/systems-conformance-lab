@@ -8,7 +8,7 @@ from .harness import CommandTarget
 
 @dataclass(frozen=True, slots=True)
 class SQLiteWALBackupRollbackTarget:
-    """Process-isolated detached SQLite backup uncommitted-crash rollback target."""
+    """Detached SQLite backup rollback plus post-recovery committed-crash target."""
 
     def as_command_target(self) -> CommandTarget:
         return CommandTarget(
