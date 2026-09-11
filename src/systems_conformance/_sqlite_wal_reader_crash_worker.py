@@ -124,20 +124,40 @@ def _run() -> bytes:
         reopened = sqlite3.connect(database, isolation_level=None, timeout=0.0)
         try:
             reopened.execute("PRAGMA busy_timeout = 0")
+            reopened.execute("PRAGMA wal_autocheckpoint = 0")
             journal_mode = str(reopened.execute("PRAGMA journal_mode").fetchone()[0]).lower()
-            value = _read_value(reopened)
+            recovered_value = _read_value(reopened)
             integrity = reopened.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
-            checkpoint = reopened.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+            reopened.execute("BEGIN IMMEDIATE")
+            reopened.execute("UPDATE items SET v = 9")
+            reopened.execute("COMMIT")
+            post_crash_write_value = _read_value(reopened)
+        finally:
+            reopened.close()
+
+        verified = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+        try:
+            verified.execute("PRAGMA busy_timeout = 0")
+            durable_value = _read_value(verified)
+            checkpoint = verified.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
             checkpoint_busy = not (
                 checkpoint is not None and len(checkpoint) == 3 and int(checkpoint[0]) == 0
             )
         finally:
-            reopened.close()
+            verified.close()
 
-        if journal_mode != "wal" or value != 8 or not integrity or checkpoint_busy:
+        if (
+            journal_mode != "wal"
+            or recovered_value != 8
+            or not integrity
+            or post_crash_write_value != 9
+            or durable_value != 9
+            or checkpoint_busy
+        ):
             raise RuntimeError(
                 "post-reader-crash recovery mismatch: "
-                f"mode={journal_mode!r} value={value!r} integrity={integrity!r} "
+                f"mode={journal_mode!r} recovered={recovered_value!r} integrity={integrity!r} "
+                f"post_write={post_crash_write_value!r} durable={durable_value!r} "
                 f"checkpoint_busy={checkpoint_busy!r}"
             )
         payload = {
@@ -146,8 +166,10 @@ def _run() -> bytes:
             "writer_committed_value": 8,
             "reader_snapshot_after_commit": 6,
             "reader_forced_crash": True,
-            "fresh_reopen_value": value,
+            "fresh_reopen_value": recovered_value,
             "fresh_reopen_integrity": "ok",
+            "post_reader_crash_write_value": post_crash_write_value,
+            "post_reader_crash_write_durable": durable_value,
             "fresh_reopen_checkpoint_busy": checkpoint_busy,
         }
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()

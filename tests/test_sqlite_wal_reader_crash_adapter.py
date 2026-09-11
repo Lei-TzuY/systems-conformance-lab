@@ -30,6 +30,8 @@ def test_reader_crash_releases_snapshot_for_recovery() -> None:
         "reader_forced_crash": True,
         "fresh_reopen_value": 8,
         "fresh_reopen_integrity": "ok",
+        "post_reader_crash_write_value": 9,
+        "post_reader_crash_write_durable": 9,
         "fresh_reopen_checkpoint_busy": False,
     }
 
