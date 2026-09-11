@@ -33,6 +33,7 @@ def test_detached_backup_rollback_remains_durable() -> None:
         "integrity": "ok",
         "checkpoint_busy": False,
         "post_rollback_committed_value": 8,
+        "post_rollback_committed_writer_terminated": True,
         "fresh_reopen_value": 8,
         "fresh_reopen_integrity": "ok",
         "fresh_reopen_checkpoint_busy": False,
