@@ -45,6 +45,11 @@ def test_online_backup_round_trips_recovered_wal_state_through_child_process() -
         "detached_backup_value": 5,
         "detached_backup_integrity": "ok",
         "detached_backup_reopened": True,
+        "detached_backup_wal_mode": "wal",
+        "detached_backup_wal_writer_terminated": True,
+        "detached_backup_wal_value": 6,
+        "detached_backup_wal_integrity": "ok",
+        "detached_backup_wal_checkpoint_busy": False,
     }
 
 
