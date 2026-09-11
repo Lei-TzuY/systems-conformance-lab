@@ -59,9 +59,28 @@ def _backup(source: str, destination: str) -> int:
     return 0
 
 
-def _run_backup_child(source: str, destination: str) -> None:
+def _verify_detached_backup(database: str) -> int:
+    connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+    try:
+        connection.execute("PRAGMA busy_timeout = 0")
+        if _read_value(connection) != 4:
+            raise RuntimeError("detached backup did not preserve independent value")
+        if not _integrity_ok(connection):
+            raise RuntimeError("detached backup integrity_check failed before write")
+        _write_value(connection, 5)
+        if _read_value(connection) != 5:
+            raise RuntimeError("detached backup post-source-deletion write mismatch")
+        if not _integrity_ok(connection):
+            raise RuntimeError("detached backup integrity_check failed after write")
+        print("DETACHED_BACKUP_OK", flush=True)
+    finally:
+        connection.close()
+    return 0
+
+
+def _run_child(arguments: list[str], expected_stdout: str, label: str) -> None:
     completed = subprocess.run(
-        [sys.executable, "-m", _WORKER_MODULE, "--backup", source, destination],
+        [sys.executable, "-m", _WORKER_MODULE, *arguments],
         stdin=subprocess.DEVNULL,
         capture_output=True,
         text=True,
@@ -70,13 +89,35 @@ def _run_backup_child(source: str, destination: str) -> None:
     )
     if completed.returncode != 0:
         raise RuntimeError(
-            "backup worker failed: "
+            f"{label} worker failed: "
             f"exit={completed.returncode} stderr={completed.stderr.strip()!r}"
         )
     if completed.stderr.strip():
-        raise RuntimeError(f"backup worker emitted stderr: {completed.stderr.strip()!r}")
-    if completed.stdout.strip() != "BACKUP_OK":
-        raise RuntimeError(f"invalid backup worker result: {completed.stdout.strip()!r}")
+        raise RuntimeError(f"{label} worker emitted stderr: {completed.stderr.strip()!r}")
+    if completed.stdout.strip() != expected_stdout:
+        raise RuntimeError(
+            f"invalid {label} worker result: {completed.stdout.strip()!r}"
+        )
+
+
+def _run_backup_child(source: str, destination: str) -> None:
+    _run_child(["--backup", source, destination], "BACKUP_OK", "backup")
+
+
+def _run_detached_backup_child(database: str) -> None:
+    _run_child(
+        ["--verify-detached-backup", database],
+        "DETACHED_BACKUP_OK",
+        "detached backup",
+    )
+
+
+def _remove_source_database(database: str) -> None:
+    for path in (database, f"{database}-wal", f"{database}-shm"):
+        try:
+            pathlib.Path(path).unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _run() -> bytes:
@@ -192,6 +233,26 @@ def _run() -> bytes:
             backup_connection.close()
             source_connection.close()
 
+        _remove_source_database(database)
+        if pathlib.Path(database).exists():
+            raise RuntimeError("source database remained after deletion boundary")
+
+        _run_detached_backup_child(backup)
+
+        detached_backup = sqlite3.connect(backup, isolation_level=None, timeout=0.0)
+        try:
+            detached_backup_value = _read_value(detached_backup)
+            detached_backup_integrity = (
+                "ok" if _integrity_ok(detached_backup) else "failed"
+            )
+        finally:
+            detached_backup.close()
+        if detached_backup_value != 5 or detached_backup_integrity != "ok":
+            raise RuntimeError(
+                "detached backup parent verification failed: "
+                f"value={detached_backup_value!r} integrity={detached_backup_integrity!r}"
+            )
+
         payload = {
             "journal_mode": "wal",
             "writer_checkpoint": "committed_update_ready",
@@ -209,6 +270,11 @@ def _run() -> bytes:
             "backup_after_backup_write": backup_after_backup_write,
             "source_after_backup_write": source_after_backup_write,
             "independent_writes_integrity": "ok",
+            "source_deleted": True,
+            "detached_backup_process": "child",
+            "detached_backup_value": detached_backup_value,
+            "detached_backup_integrity": detached_backup_integrity,
+            "detached_backup_reopened": True,
         }
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
@@ -218,6 +284,8 @@ def main() -> int:
         return _writer(sys.argv[2])
     if len(sys.argv) == 4 and sys.argv[1] == "--backup":
         return _backup(sys.argv[2], sys.argv[3])
+    if len(sys.argv) == 3 and sys.argv[1] == "--verify-detached-backup":
+        return _verify_detached_backup(sys.argv[2])
     if len(sys.argv) != 1:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
