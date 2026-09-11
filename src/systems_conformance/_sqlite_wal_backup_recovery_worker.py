@@ -42,6 +42,23 @@ def _writer(database: str) -> int:
         connection.close()
 
 
+def _detached_wal_writer(database: str) -> int:
+    connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+    try:
+        connection.execute("PRAGMA busy_timeout = 0")
+        row = connection.execute("PRAGMA journal_mode = WAL").fetchone()
+        actual = None if row is None else str(row[0]).lower()
+        if actual != "wal":
+            raise RuntimeError(f"detached backup WAL unavailable: got {actual}")
+        connection.execute("PRAGMA wal_autocheckpoint = 0")
+        _write_value(connection, 6)
+        print("DETACHED_WAL_COMMITTED_READY", flush=True)
+        while True:
+            time.sleep(60.0)
+    finally:
+        connection.close()
+
+
 def _backup(source: str, destination: str) -> int:
     source_connection = sqlite3.connect(source, isolation_level=None, timeout=0.0)
     destination_connection = sqlite3.connect(destination, isolation_level=None, timeout=0.0)
@@ -112,6 +129,39 @@ def _run_detached_backup_child(database: str) -> None:
     )
 
 
+def _force_kill_after_marker(
+    arguments: list[str], expected_marker: str, label: str
+) -> None:
+    process = subprocess.Popen(
+        [sys.executable, "-m", _WORKER_MODULE, *arguments],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        if process.stdout is None:
+            raise RuntimeError(f"{label} stdout pipe unavailable")
+        marker = process.stdout.readline().strip()
+        if marker != expected_marker:
+            stderr = ""
+            if process.stderr is not None:
+                stderr = process.stderr.read().strip()
+            raise RuntimeError(
+                f"{label} failed before forced crash: marker={marker!r} stderr={stderr!r}"
+            )
+        process.kill()
+        _, stderr = process.communicate(timeout=2.0)
+        if process.returncode == 0:
+            raise RuntimeError(f"{label} unexpectedly exited successfully after forced kill")
+        if stderr.strip():
+            raise RuntimeError(f"{label} emitted stderr before forced kill: {stderr.strip()!r}")
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=2.0)
+
+
 def _remove_source_database(database: str) -> None:
     for path in (database, f"{database}-wal", f"{database}-shm"):
         try:
@@ -140,34 +190,9 @@ def _run() -> bytes:
         finally:
             bootstrap.close()
 
-        process = subprocess.Popen(
-            [sys.executable, "-m", _WORKER_MODULE, "--writer", database],
-            stdin=subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
+        _force_kill_after_marker(
+            ["--writer", database], "COMMITTED_READY", "writer"
         )
-        try:
-            if process.stdout is None:
-                raise RuntimeError("writer stdout pipe unavailable")
-            marker = process.stdout.readline().strip()
-            if marker != "COMMITTED_READY":
-                stderr = ""
-                if process.stderr is not None:
-                    stderr = process.stderr.read().strip()
-                raise RuntimeError(
-                    f"writer failed before forced crash: marker={marker!r} stderr={stderr!r}"
-                )
-            process.kill()
-            _, stderr = process.communicate(timeout=2.0)
-            if process.returncode == 0:
-                raise RuntimeError("writer unexpectedly exited successfully after forced kill")
-            if stderr.strip():
-                raise RuntimeError(f"writer emitted stderr before forced kill: {stderr.strip()!r}")
-        finally:
-            if process.poll() is None:
-                process.kill()
-                process.communicate(timeout=2.0)
 
         recovered = sqlite3.connect(database, isolation_level=None, timeout=0.0)
         try:
@@ -253,6 +278,44 @@ def _run() -> bytes:
                 f"value={detached_backup_value!r} integrity={detached_backup_integrity!r}"
             )
 
+        _force_kill_after_marker(
+            ["--detached-wal-writer", backup],
+            "DETACHED_WAL_COMMITTED_READY",
+            "detached WAL writer",
+        )
+
+        detached_wal_recovery = sqlite3.connect(backup, isolation_level=None, timeout=0.0)
+        try:
+            detached_wal_recovery.execute("PRAGMA busy_timeout = 0")
+            row = detached_wal_recovery.execute("PRAGMA journal_mode").fetchone()
+            detached_backup_wal_mode = None if row is None else str(row[0]).lower()
+            detached_backup_wal_value = _read_value(detached_wal_recovery)
+            detached_backup_wal_integrity = (
+                "ok" if _integrity_ok(detached_wal_recovery) else "failed"
+            )
+            checkpoint = detached_wal_recovery.execute(
+                "PRAGMA wal_checkpoint(TRUNCATE)"
+            ).fetchone()
+            detached_backup_wal_checkpoint_busy = not (
+                checkpoint is not None
+                and len(checkpoint) == 3
+                and int(checkpoint[0]) == 0
+            )
+        finally:
+            detached_wal_recovery.close()
+        if detached_backup_wal_mode != "wal":
+            raise RuntimeError(
+                f"detached backup did not retain WAL mode: {detached_backup_wal_mode!r}"
+            )
+        if detached_backup_wal_value != 6:
+            raise RuntimeError(
+                f"detached backup second crash recovery mismatch: {detached_backup_wal_value!r}"
+            )
+        if detached_backup_wal_integrity != "ok":
+            raise RuntimeError("detached backup second crash integrity_check failed")
+        if detached_backup_wal_checkpoint_busy:
+            raise RuntimeError("detached backup second crash checkpoint remained busy")
+
         payload = {
             "journal_mode": "wal",
             "writer_checkpoint": "committed_update_ready",
@@ -275,6 +338,11 @@ def _run() -> bytes:
             "detached_backup_value": detached_backup_value,
             "detached_backup_integrity": detached_backup_integrity,
             "detached_backup_reopened": True,
+            "detached_backup_wal_mode": detached_backup_wal_mode,
+            "detached_backup_wal_writer_terminated": True,
+            "detached_backup_wal_value": detached_backup_wal_value,
+            "detached_backup_wal_integrity": detached_backup_wal_integrity,
+            "detached_backup_wal_checkpoint_busy": detached_backup_wal_checkpoint_busy,
         }
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
@@ -282,6 +350,8 @@ def _run() -> bytes:
 def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--writer":
         return _writer(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "--detached-wal-writer":
+        return _detached_wal_writer(sys.argv[2])
     if len(sys.argv) == 4 and sys.argv[1] == "--backup":
         return _backup(sys.argv[2], sys.argv[3])
     if len(sys.argv) == 3 and sys.argv[1] == "--verify-detached-backup":
