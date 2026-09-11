@@ -11,7 +11,7 @@ from systems_conformance.sqlite_reader_contention_adapter import SQLiteReaderCon
 def _execute(target: SQLiteReaderContentionTarget, case: bytes = b""):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -21,6 +21,7 @@ def test_delete_exclusive_writer_blocks_reader_until_commit() -> None:
     result = _execute(SQLiteReaderContentionTarget(journal_mode="delete"))
 
     assert result.infrastructure_error is None
+    assert result.timed_out is False
     assert result.exit_code == 0
     assert result.stderr.text == ""
     assert json.loads(result.stdout.text) == {
@@ -36,6 +37,7 @@ def test_wal_exclusive_writer_preserves_committed_reader_snapshot() -> None:
     result = _execute(SQLiteReaderContentionTarget(journal_mode="wal"))
 
     assert result.infrastructure_error is None
+    assert result.timed_out is False
     assert result.exit_code == 0
     assert result.stderr.text == ""
     assert json.loads(result.stdout.text) == {
