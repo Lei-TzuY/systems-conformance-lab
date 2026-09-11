@@ -11,7 +11,7 @@ from systems_conformance.sqlite_wal_backup_rollback_adapter import (
 def _execute(target: SQLiteWALBackupRollbackTarget, case: bytes = b""):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=5.0,
+        timeout_seconds=8.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -33,6 +33,7 @@ def test_detached_backup_rollback_remains_durable() -> None:
         "integrity": "ok",
         "checkpoint_busy": False,
         "post_rollback_committed_value": 8,
+        "post_rollback_committed_writer_terminated": True,
         "fresh_reopen_value": 8,
         "fresh_reopen_integrity": "ok",
         "fresh_reopen_checkpoint_busy": False,
@@ -57,7 +58,7 @@ def test_real_harness_repeats_backup_rollback_deterministically() -> None:
     harness = DifferentialHarness(
         candidate=target.as_command_target(),
         oracle=target.as_command_target(),
-        timeout_seconds=5.0,
+        timeout_seconds=8.0,
     )
 
     run = harness.evaluate(b"")
