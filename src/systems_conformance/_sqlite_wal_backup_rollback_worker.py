@@ -42,6 +42,27 @@ def _uncommitted_writer(database: str) -> int:
         connection.close()
 
 
+def _committed_writer(database: str, committed_value: int) -> int:
+    connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+    try:
+        connection.execute("PRAGMA busy_timeout = 0")
+        row = connection.execute("PRAGMA journal_mode = WAL").fetchone()
+        actual = None if row is None else str(row[0]).lower()
+        if actual != "wal":
+            raise RuntimeError(f"recovered backup WAL unavailable: got {actual}")
+        connection.execute("PRAGMA wal_autocheckpoint = 0")
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("UPDATE items SET v = ?", (committed_value,))
+        connection.execute("COMMIT")
+        if _read_value(connection) != committed_value:
+            raise RuntimeError("committed writer could not observe its durable mutation")
+        print(f"COMMITTED_READY:{committed_value}", flush=True)
+        while True:
+            time.sleep(60.0)
+    finally:
+        connection.close()
+
+
 def _verify_reopen(database: str, expected_value: int) -> int:
     connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
     try:
@@ -106,6 +127,48 @@ def _force_kill_uncommitted(database: str) -> None:
             raise RuntimeError("writer unexpectedly exited successfully after forced kill")
         if stderr.strip():
             raise RuntimeError(f"writer emitted stderr before forced kill: {stderr.strip()!r}")
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.communicate(timeout=2.0)
+
+
+def _force_kill_committed(database: str, committed_value: int) -> None:
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            "-m",
+            _WORKER_MODULE,
+            "--committed-writer",
+            database,
+            str(committed_value),
+        ],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        if process.stdout is None:
+            raise RuntimeError("committed writer stdout pipe unavailable")
+        marker = process.stdout.readline().strip()
+        expected_marker = f"COMMITTED_READY:{committed_value}"
+        if marker != expected_marker:
+            stderr = "" if process.stderr is None else process.stderr.read().strip()
+            raise RuntimeError(
+                "committed writer failed before forced crash: "
+                f"marker={marker!r} stderr={stderr!r}"
+            )
+        process.kill()
+        _, stderr = process.communicate(timeout=2.0)
+        if process.returncode == 0:
+            raise RuntimeError(
+                "committed writer unexpectedly exited successfully after forced kill"
+            )
+        if stderr.strip():
+            raise RuntimeError(
+                f"committed writer emitted stderr before forced kill: {stderr.strip()!r}"
+            )
     finally:
         if process.poll() is None:
             process.kill()
@@ -189,13 +252,6 @@ def _run() -> bytes:
                 and len(checkpoint) == 3
                 and int(checkpoint[0]) == 0
             )
-            if recovered_value == 6 and integrity == "ok" and not checkpoint_busy:
-                recovered.execute("BEGIN IMMEDIATE")
-                recovered.execute("UPDATE items SET v = 8")
-                recovered.execute("COMMIT")
-                post_rollback_committed_value = _read_value(recovered)
-            else:
-                post_rollback_committed_value = None
         finally:
             recovered.close()
 
@@ -207,15 +263,14 @@ def _run() -> bytes:
             raise RuntimeError("integrity_check failed after uncommitted crash")
         if checkpoint_busy:
             raise RuntimeError("checkpoint remained busy after uncommitted crash")
-        if post_rollback_committed_value != 8:
-            raise RuntimeError(
-                "recovered detached backup could not persist a post-rollback commit"
-            )
 
-        reopened = _fresh_reopen(backup_path, 8)
+        post_rollback_committed_value = 8
+        _force_kill_committed(backup_path, post_rollback_committed_value)
+
+        reopened = _fresh_reopen(backup_path, post_rollback_committed_value)
         if reopened != {
             "journal_mode": "wal",
-            "value": 8,
+            "value": post_rollback_committed_value,
             "integrity": "ok",
             "checkpoint_busy": False,
         }:
@@ -230,6 +285,7 @@ def _run() -> bytes:
             "integrity": integrity,
             "checkpoint_busy": checkpoint_busy,
             "post_rollback_committed_value": post_rollback_committed_value,
+            "post_rollback_committed_writer_terminated": True,
             "fresh_reopen_value": reopened["value"],
             "fresh_reopen_integrity": reopened["integrity"],
             "fresh_reopen_checkpoint_busy": reopened["checkpoint_busy"],
@@ -242,6 +298,13 @@ def main() -> int:
         try:
             return _uncommitted_writer(sys.argv[2])
         except (OSError, RuntimeError, sqlite3.Error) as exc:
+            print(f"target_error: {exc}", file=sys.stderr)
+            return 1
+    if len(sys.argv) == 4 and sys.argv[1] == "--committed-writer":
+        try:
+            committed_value = int(sys.argv[3])
+            return _committed_writer(sys.argv[2], committed_value)
+        except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
             print(f"target_error: {exc}", file=sys.stderr)
             return 1
     if len(sys.argv) == 4 and sys.argv[1] == "--verify-reopen":
