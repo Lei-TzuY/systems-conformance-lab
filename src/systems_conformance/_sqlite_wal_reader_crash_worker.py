@@ -154,7 +154,7 @@ def _run() -> bytes:
 
 
 def main() -> int:
-    if len(sys.argv) == 5 and sys.argv[1] == "--reader":
+    if len(sys.argv) == 4 and sys.argv[1] == "--reader":
         try:
             return _reader(sys.argv[2], int(sys.argv[3]))
         except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
