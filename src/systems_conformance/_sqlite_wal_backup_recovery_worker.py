@@ -22,6 +22,12 @@ def _integrity_ok(connection: sqlite3.Connection) -> bool:
     return connection.execute("PRAGMA integrity_check").fetchall() == [("ok",)]
 
 
+def _write_value(connection: sqlite3.Connection, value: int) -> None:
+    connection.execute("BEGIN IMMEDIATE")
+    connection.execute("UPDATE items SET v = ?", (value,))
+    connection.commit()
+
+
 def _writer(database: str) -> int:
     connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
     try:
@@ -128,9 +134,7 @@ def _run() -> bytes:
             recovered_value = _read_value(recovered)
             if recovered_value != 1:
                 raise RuntimeError(f"committed crash recovery mismatch: {recovered_value!r}")
-            recovered.execute("BEGIN IMMEDIATE")
-            recovered.execute("UPDATE items SET v = 2")
-            recovered.commit()
+            _write_value(recovered, 2)
             if _read_value(recovered) != 2:
                 raise RuntimeError("post-recovery commit mismatch")
             checkpoint = recovered.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
@@ -155,6 +159,39 @@ def _run() -> bytes:
                 f"integrity={backup_integrity!r}"
             )
 
+        source_connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+        backup_connection = sqlite3.connect(backup, isolation_level=None, timeout=0.0)
+        try:
+            source_connection.execute("PRAGMA busy_timeout = 0")
+            backup_connection.execute("PRAGMA busy_timeout = 0")
+
+            _write_value(source_connection, 3)
+            source_after_source_write = _read_value(source_connection)
+            backup_after_source_write = _read_value(backup_connection)
+            if source_after_source_write != 3 or backup_after_source_write != 2:
+                raise RuntimeError(
+                    "backup changed with source mutation: "
+                    f"source={source_after_source_write!r} "
+                    f"backup={backup_after_source_write!r}"
+                )
+
+            _write_value(backup_connection, 4)
+            backup_after_backup_write = _read_value(backup_connection)
+            source_after_backup_write = _read_value(source_connection)
+            if backup_after_backup_write != 4 or source_after_backup_write != 3:
+                raise RuntimeError(
+                    "source changed with backup mutation: "
+                    f"source={source_after_backup_write!r} "
+                    f"backup={backup_after_backup_write!r}"
+                )
+            if not _integrity_ok(source_connection):
+                raise RuntimeError("source integrity_check failed after independence writes")
+            if not _integrity_ok(backup_connection):
+                raise RuntimeError("backup integrity_check failed after independence writes")
+        finally:
+            backup_connection.close()
+            source_connection.close()
+
         payload = {
             "journal_mode": "wal",
             "writer_checkpoint": "committed_update_ready",
@@ -167,6 +204,11 @@ def _run() -> bytes:
             "backup_value": backup_value,
             "backup_integrity": backup_integrity,
             "backup_reopened": True,
+            "source_after_source_write": source_after_source_write,
+            "backup_after_source_write": backup_after_source_write,
+            "backup_after_backup_write": backup_after_backup_write,
+            "source_after_backup_write": source_after_backup_write,
+            "independent_writes_integrity": "ok",
         }
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 

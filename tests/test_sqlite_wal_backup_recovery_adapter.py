@@ -35,6 +35,11 @@ def test_online_backup_round_trips_recovered_wal_state_through_child_process() -
         "backup_value": 2,
         "backup_integrity": "ok",
         "backup_reopened": True,
+        "source_after_source_write": 3,
+        "backup_after_source_write": 2,
+        "backup_after_backup_write": 4,
+        "source_after_backup_write": 3,
+        "independent_writes_integrity": "ok",
     }
 
 
