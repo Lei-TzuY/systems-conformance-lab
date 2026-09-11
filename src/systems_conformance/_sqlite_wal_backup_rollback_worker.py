@@ -123,8 +123,7 @@ def _fresh_reopen(database: str, expected_value: int) -> dict[str, object]:
             str(expected_value),
         ],
         stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        capture_output=True,
         text=True,
         timeout=3.0,
         check=False,
@@ -143,7 +142,7 @@ def _fresh_reopen(database: str, expected_value: int) -> dict[str, object]:
     except json.JSONDecodeError as exc:
         raise RuntimeError("fresh reopen verifier emitted invalid JSON") from exc
     if not isinstance(payload, dict):
-        raise RuntimeError("fresh reopen verifier emitted non-object JSON")
+        raise TypeError("fresh reopen verifier emitted non-object JSON")
     return payload
 
 
@@ -249,7 +248,7 @@ def main() -> int:
         try:
             expected_value = int(sys.argv[3])
             return _verify_reopen(sys.argv[2], expected_value)
-        except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as exc:
             print(f"target_error: {exc}", file=sys.stderr)
             return 1
     if len(sys.argv) != 1:
