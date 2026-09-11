@@ -17,6 +17,13 @@ def _read_value(connection: sqlite3.Connection) -> int:
     return int(row[0])
 
 
+def _checkpoint_busy(connection: sqlite3.Connection) -> bool:
+    checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+    return not (
+        checkpoint is not None and len(checkpoint) == 3 and int(checkpoint[0]) == 0
+    )
+
+
 def _reader(database: str, expected: int) -> int:
     connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
     try:
@@ -102,6 +109,7 @@ def _run() -> bytes:
             connection.close()
 
         reader = _start_reader(database, 6)
+        checkpoint_busy_while_reader_alive = False
         try:
             writer = sqlite3.connect(database, isolation_level=None, timeout=0.0)
             try:
@@ -115,6 +123,22 @@ def _run() -> bytes:
             finally:
                 writer.close()
             _read_snapshot(reader, 6)
+
+            checkpoint_connection = sqlite3.connect(
+                database, isolation_level=None, timeout=0.0
+            )
+            try:
+                checkpoint_connection.execute("PRAGMA busy_timeout = 0")
+                checkpoint_busy_while_reader_alive = _checkpoint_busy(
+                    checkpoint_connection
+                )
+            finally:
+                checkpoint_connection.close()
+            if not checkpoint_busy_while_reader_alive:
+                raise RuntimeError(
+                    "truncating checkpoint unexpectedly completed while reader snapshot was pinned"
+                )
+
             _kill_reader(reader)
         finally:
             if reader.poll() is None:
@@ -139,10 +163,7 @@ def _run() -> bytes:
         try:
             verified.execute("PRAGMA busy_timeout = 0")
             durable_value = _read_value(verified)
-            checkpoint = verified.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
-            checkpoint_busy = not (
-                checkpoint is not None and len(checkpoint) == 3 and int(checkpoint[0]) == 0
-            )
+            checkpoint_busy_after_reader_crash = _checkpoint_busy(verified)
         finally:
             verified.close()
 
@@ -152,25 +173,26 @@ def _run() -> bytes:
             or not integrity
             or post_crash_write_value != 9
             or durable_value != 9
-            or checkpoint_busy
+            or checkpoint_busy_after_reader_crash
         ):
             raise RuntimeError(
                 "post-reader-crash recovery mismatch: "
                 f"mode={journal_mode!r} recovered={recovered_value!r} integrity={integrity!r} "
                 f"post_write={post_crash_write_value!r} durable={durable_value!r} "
-                f"checkpoint_busy={checkpoint_busy!r}"
+                f"checkpoint_busy_after_crash={checkpoint_busy_after_reader_crash!r}"
             )
         payload = {
             "journal_mode": journal_mode,
             "reader_initial_value": 6,
             "writer_committed_value": 8,
             "reader_snapshot_after_commit": 6,
+            "checkpoint_busy_while_reader_alive": checkpoint_busy_while_reader_alive,
             "reader_forced_crash": True,
             "fresh_reopen_value": recovered_value,
             "fresh_reopen_integrity": "ok",
             "post_reader_crash_write_value": post_crash_write_value,
             "post_reader_crash_write_durable": durable_value,
-            "fresh_reopen_checkpoint_busy": checkpoint_busy,
+            "fresh_reopen_checkpoint_busy": checkpoint_busy_after_reader_crash,
         }
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
