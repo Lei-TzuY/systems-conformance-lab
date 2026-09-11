@@ -17,7 +17,7 @@ def _execute(target: SQLiteWALBackupRollbackTarget, case: bytes = b""):
     )
 
 
-def test_detached_backup_rolls_back_uncommitted_wal_crash_and_remains_durable() -> None:
+def test_detached_backup_rollback_remains_durable() -> None:
     result = _execute(SQLiteWALBackupRollbackTarget())
 
     assert result.infrastructure_error is None
