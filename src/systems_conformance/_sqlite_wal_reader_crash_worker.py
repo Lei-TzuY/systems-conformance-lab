@@ -181,6 +181,54 @@ def _run() -> bytes:
                 f"post_write={post_crash_write_value!r} durable={durable_value!r} "
                 f"checkpoint_busy_after_crash={checkpoint_busy_after_reader_crash!r}"
             )
+
+        overlap_reader = _start_reader(database, 9)
+        overlap_writer = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+        overlap_writer_value = -1
+        try:
+            overlap_writer.execute("PRAGMA busy_timeout = 0")
+            overlap_writer.execute("PRAGMA wal_autocheckpoint = 0")
+            overlap_writer.execute("BEGIN IMMEDIATE")
+            overlap_writer.execute("UPDATE items SET v = 10")
+            _read_snapshot(overlap_reader, 9)
+            _kill_reader(overlap_reader)
+            overlap_writer.execute("COMMIT")
+            overlap_writer_value = _read_value(overlap_writer)
+            if overlap_writer_value != 10:
+                raise RuntimeError(
+                    "in-flight writer could not observe commit after reader crash"
+                )
+        finally:
+            if overlap_reader.poll() is None:
+                overlap_reader.kill()
+                overlap_reader.communicate(timeout=2.0)
+            if overlap_writer.in_transaction:
+                overlap_writer.execute("ROLLBACK")
+            overlap_writer.close()
+
+        overlap_verified = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+        try:
+            overlap_verified.execute("PRAGMA busy_timeout = 0")
+            overlap_durable_value = _read_value(overlap_verified)
+            overlap_integrity = overlap_verified.execute("PRAGMA integrity_check").fetchall() == [
+                ("ok",)
+            ]
+            overlap_checkpoint_busy = _checkpoint_busy(overlap_verified)
+        finally:
+            overlap_verified.close()
+
+        if (
+            overlap_writer_value != 10
+            or overlap_durable_value != 10
+            or not overlap_integrity
+            or overlap_checkpoint_busy
+        ):
+            raise RuntimeError(
+                "reader-crash writer-overlap mismatch: "
+                f"writer={overlap_writer_value!r} durable={overlap_durable_value!r} "
+                f"integrity={overlap_integrity!r} checkpoint_busy={overlap_checkpoint_busy!r}"
+            )
+
         payload = {
             "journal_mode": journal_mode,
             "reader_initial_value": 6,
@@ -193,6 +241,14 @@ def _run() -> bytes:
             "post_reader_crash_write_value": post_crash_write_value,
             "post_reader_crash_write_durable": durable_value,
             "fresh_reopen_checkpoint_busy": checkpoint_busy_after_reader_crash,
+            "overlap_reader_initial_value": 9,
+            "overlap_writer_pending_value": 10,
+            "overlap_reader_snapshot_while_writer_active": 9,
+            "overlap_reader_forced_crash": True,
+            "overlap_writer_committed_after_reader_crash": overlap_writer_value,
+            "overlap_fresh_reopen_value": overlap_durable_value,
+            "overlap_fresh_reopen_integrity": "ok",
+            "overlap_fresh_reopen_checkpoint_busy": overlap_checkpoint_busy,
         }
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
