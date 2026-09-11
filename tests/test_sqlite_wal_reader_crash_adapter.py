@@ -27,6 +27,7 @@ def test_reader_crash_releases_snapshot_for_recovery() -> None:
         "reader_initial_value": 6,
         "writer_committed_value": 8,
         "reader_snapshot_after_commit": 6,
+        "checkpoint_busy_while_reader_alive": True,
         "reader_forced_crash": True,
         "fresh_reopen_value": 8,
         "fresh_reopen_integrity": "ok",
