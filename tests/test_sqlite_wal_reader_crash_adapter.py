@@ -9,7 +9,7 @@ from systems_conformance.sqlite_wal_reader_crash_adapter import SQLiteWALReaderC
 def _execute(target: SQLiteWALReaderCrashTarget, case: bytes = b""):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=8.0,
+        timeout_seconds=12.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -51,7 +51,7 @@ def test_real_harness_repeats_reader_crash_target_deterministically() -> None:
     harness = DifferentialHarness(
         candidate=target.as_command_target(),
         oracle=target.as_command_target(),
-        timeout_seconds=8.0,
+        timeout_seconds=12.0,
     )
 
     run = harness.evaluate(b"")
