@@ -42,6 +42,47 @@ def _uncommitted_writer(database: str) -> int:
         connection.close()
 
 
+def _verify_reopen(database: str, expected_value: int) -> int:
+    connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+    try:
+        connection.execute("PRAGMA busy_timeout = 0")
+        row = connection.execute("PRAGMA journal_mode").fetchone()
+        journal_mode = None if row is None else str(row[0]).lower()
+        value = _read_value(connection)
+        integrity = "ok" if _integrity_ok(connection) else "failed"
+        checkpoint = connection.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        checkpoint_busy = not (
+            checkpoint is not None and len(checkpoint) == 3 and int(checkpoint[0]) == 0
+        )
+    finally:
+        connection.close()
+
+    if journal_mode != "wal":
+        raise RuntimeError(f"fresh reopen did not retain WAL mode: {journal_mode!r}")
+    if value != expected_value:
+        raise RuntimeError(
+            f"fresh reopen lost post-rollback commit: expected {expected_value}, got {value}"
+        )
+    if integrity != "ok":
+        raise RuntimeError("fresh reopen integrity_check failed")
+    if checkpoint_busy:
+        raise RuntimeError("fresh reopen checkpoint remained busy")
+
+    print(
+        json.dumps(
+            {
+                "journal_mode": journal_mode,
+                "value": value,
+                "integrity": integrity,
+                "checkpoint_busy": checkpoint_busy,
+            },
+            separators=(",", ":"),
+        ),
+        flush=True,
+    )
+    return 0
+
+
 def _force_kill_uncommitted(database: str) -> None:
     process = subprocess.Popen(
         [sys.executable, "-m", _WORKER_MODULE, "--uncommitted-writer", database],
@@ -69,6 +110,40 @@ def _force_kill_uncommitted(database: str) -> None:
         if process.poll() is None:
             process.kill()
             process.communicate(timeout=2.0)
+
+
+def _fresh_reopen(database: str, expected_value: int) -> dict[str, object]:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            _WORKER_MODULE,
+            "--verify-reopen",
+            database,
+            str(expected_value),
+        ],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=3.0,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "fresh reopen verifier failed: "
+            f"exit={completed.returncode} stderr={completed.stderr.strip()!r}"
+        )
+    if completed.stderr.strip():
+        raise RuntimeError(
+            f"fresh reopen verifier emitted stderr: {completed.stderr.strip()!r}"
+        )
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("fresh reopen verifier emitted invalid JSON") from exc
+    if not isinstance(payload, dict):
+        raise TypeError("fresh reopen verifier emitted non-object JSON")
+    return payload
 
 
 def _run() -> bytes:
@@ -114,6 +189,13 @@ def _run() -> bytes:
                 and len(checkpoint) == 3
                 and int(checkpoint[0]) == 0
             )
+            if recovered_value == 6 and integrity == "ok" and not checkpoint_busy:
+                recovered.execute("BEGIN IMMEDIATE")
+                recovered.execute("UPDATE items SET v = 8")
+                recovered.execute("COMMIT")
+                post_rollback_committed_value = _read_value(recovered)
+            else:
+                post_rollback_committed_value = None
         finally:
             recovered.close()
 
@@ -125,6 +207,19 @@ def _run() -> bytes:
             raise RuntimeError("integrity_check failed after uncommitted crash")
         if checkpoint_busy:
             raise RuntimeError("checkpoint remained busy after uncommitted crash")
+        if post_rollback_committed_value != 8:
+            raise RuntimeError(
+                "recovered detached backup could not persist a post-rollback commit"
+            )
+
+        reopened = _fresh_reopen(backup_path, 8)
+        if reopened != {
+            "journal_mode": "wal",
+            "value": 8,
+            "integrity": "ok",
+            "checkpoint_busy": False,
+        }:
+            raise RuntimeError(f"fresh reopen verification mismatch: {reopened!r}")
 
         payload = {
             "source_deleted": True,
@@ -134,6 +229,10 @@ def _run() -> bytes:
             "recovered_value": recovered_value,
             "integrity": integrity,
             "checkpoint_busy": checkpoint_busy,
+            "post_rollback_committed_value": post_rollback_committed_value,
+            "fresh_reopen_value": reopened["value"],
+            "fresh_reopen_integrity": reopened["integrity"],
+            "fresh_reopen_checkpoint_busy": reopened["checkpoint_busy"],
         }
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
@@ -143,6 +242,13 @@ def main() -> int:
         try:
             return _uncommitted_writer(sys.argv[2])
         except (OSError, RuntimeError, sqlite3.Error) as exc:
+            print(f"target_error: {exc}", file=sys.stderr)
+            return 1
+    if len(sys.argv) == 4 and sys.argv[1] == "--verify-reopen":
+        try:
+            expected_value = int(sys.argv[3])
+            return _verify_reopen(sys.argv[2], expected_value)
+        except (OSError, RuntimeError, TypeError, ValueError, sqlite3.Error) as exc:
             print(f"target_error: {exc}", file=sys.stderr)
             return 1
     if len(sys.argv) != 1:

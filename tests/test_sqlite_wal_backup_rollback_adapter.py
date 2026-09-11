@@ -17,7 +17,7 @@ def _execute(target: SQLiteWALBackupRollbackTarget, case: bytes = b""):
     )
 
 
-def test_detached_backup_rolls_back_uncommitted_wal_crash() -> None:
+def test_detached_backup_rollback_remains_durable() -> None:
     result = _execute(SQLiteWALBackupRollbackTarget())
 
     assert result.infrastructure_error is None
@@ -32,6 +32,10 @@ def test_detached_backup_rolls_back_uncommitted_wal_crash() -> None:
         "recovered_value": 6,
         "integrity": "ok",
         "checkpoint_busy": False,
+        "post_rollback_committed_value": 8,
+        "fresh_reopen_value": 8,
+        "fresh_reopen_integrity": "ok",
+        "fresh_reopen_checkpoint_busy": False,
     }
 
 
