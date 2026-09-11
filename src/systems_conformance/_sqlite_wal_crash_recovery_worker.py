@@ -113,6 +113,43 @@ def _run_checkpoint_in_child(database: str) -> int:
     return int(value)
 
 
+def _integrity_worker(database: str) -> int:
+    connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+    try:
+        connection.execute("PRAGMA busy_timeout = 0")
+        rows = connection.execute("PRAGMA integrity_check").fetchall()
+        if rows != [("ok",)]:
+            raise RuntimeError(f"integrity_check failed: {rows!r}")
+        print("ok", flush=True)
+    finally:
+        connection.close()
+    return 0
+
+
+def _run_integrity_check_in_child(database: str) -> str:
+    completed = subprocess.run(
+        [sys.executable, "-m", _WORKER_MODULE, "--integrity-check", database],
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        timeout=2.0,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError(
+            "integrity worker failed: "
+            f"exit={completed.returncode} stderr={completed.stderr.strip()!r}"
+        )
+    if completed.stderr.strip():
+        raise RuntimeError(
+            f"integrity worker emitted stderr: {completed.stderr.strip()!r}"
+        )
+    value = completed.stdout.strip()
+    if value != "ok":
+        raise RuntimeError(f"invalid integrity worker result: {value!r}")
+    return value
+
+
 def _run(
     *,
     commit_before_crash: bool,
@@ -120,6 +157,7 @@ def _run(
     checkpoint_after_crash: bool,
     checkpoint_in_child: bool,
     recover_in_child: bool,
+    integrity_check_in_child: bool,
 ) -> bytes:
     if checkpoint_after_crash and not (commit_before_crash and pin_reader_snapshot):
         raise RuntimeError(
@@ -127,6 +165,8 @@ def _run(
         )
     if checkpoint_in_child and not checkpoint_after_crash:
         raise RuntimeError("checkpoint-in-child requires checkpoint-after-crash")
+    if integrity_check_in_child and not checkpoint_after_crash:
+        raise RuntimeError("integrity-check-in-child requires checkpoint-after-crash")
 
     with tempfile.TemporaryDirectory(
         prefix="systems-conformance-sqlite-wal-crash-recovery-"
@@ -220,6 +260,7 @@ def _run(
 
             blocked_checkpoint_busy: bool | None = None
             released_checkpoint_busy: bool | None = None
+            integrity_check: str | None = None
             if checkpoint_after_crash:
                 if checkpoint_in_child:
                     blocked_busy = _run_checkpoint_in_child(database)
@@ -273,6 +314,8 @@ def _run(
                     raise RuntimeError(
                         f"fresh state after reader release mismatch: {post_release_value!r}"
                     )
+                if integrity_check_in_child:
+                    integrity_check = _run_integrity_check_in_child(database)
             else:
                 post_release_value = None
         finally:
@@ -309,6 +352,13 @@ def _run(
             )
         if checkpoint_in_child:
             payload["checkpoint_process"] = "child"
+        if integrity_check_in_child:
+            payload.update(
+                {
+                    "integrity_check": integrity_check,
+                    "integrity_process": "child",
+                }
+            )
         return (json.dumps(payload, separators=(",", ":")) + "\n").encode()
 
 
@@ -319,12 +369,15 @@ def main() -> int:
         return _observer(sys.argv[2])
     if len(sys.argv) == 3 and sys.argv[1] == "--checkpoint":
         return _checkpoint_worker(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "--integrity-check":
+        return _integrity_worker(sys.argv[2])
 
     commit_before_crash = "--commit-before-crash" in sys.argv[1:]
     pin_reader_snapshot = "--pin-reader-snapshot" in sys.argv[1:]
     checkpoint_after_crash = "--checkpoint-after-crash" in sys.argv[1:]
     checkpoint_in_child = "--checkpoint-in-child" in sys.argv[1:]
     recover_in_child = "--recover-in-child" in sys.argv[1:]
+    integrity_check_in_child = "--integrity-check-in-child" in sys.argv[1:]
     expected_arguments = set()
     if commit_before_crash:
         expected_arguments.add("--commit-before-crash")
@@ -336,6 +389,8 @@ def main() -> int:
         expected_arguments.add("--checkpoint-in-child")
     if recover_in_child:
         expected_arguments.add("--recover-in-child")
+    if integrity_check_in_child:
+        expected_arguments.add("--integrity-check-in-child")
     if len(sys.argv[1:]) != len(expected_arguments) or set(sys.argv[1:]) != expected_arguments:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
@@ -354,6 +409,7 @@ def main() -> int:
                 checkpoint_after_crash=checkpoint_after_crash,
                 checkpoint_in_child=checkpoint_in_child,
                 recover_in_child=recover_in_child,
+                integrity_check_in_child=integrity_check_in_child,
             )
         )
     except (OSError, RuntimeError, sqlite3.Error, subprocess.SubprocessError) as exc:
