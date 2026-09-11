@@ -15,6 +15,7 @@ class SQLiteWALCrashRecoveryTarget:
     checkpoint_after_crash: bool = False
     checkpoint_in_child: bool = False
     recover_in_child: bool = False
+    integrity_check_in_child: bool = False
 
     def __post_init__(self) -> None:
         if self.checkpoint_after_crash and not (
@@ -25,6 +26,8 @@ class SQLiteWALCrashRecoveryTarget:
             )
         if self.checkpoint_in_child and not self.checkpoint_after_crash:
             raise ValueError("checkpoint_in_child requires checkpoint_after_crash")
+        if self.integrity_check_in_child and not self.checkpoint_after_crash:
+            raise ValueError("integrity_check_in_child requires checkpoint_after_crash")
 
     def as_command_target(self) -> CommandTarget:
         argv = [sys.executable, "-m", "systems_conformance._sqlite_wal_crash_recovery_worker"]
@@ -38,4 +41,6 @@ class SQLiteWALCrashRecoveryTarget:
             argv.append("--checkpoint-in-child")
         if self.recover_in_child:
             argv.append("--recover-in-child")
+        if self.integrity_check_in_child:
+            argv.append("--integrity-check-in-child")
         return CommandTarget(tuple(argv))
