@@ -8,7 +8,54 @@ import sys
 import tempfile
 
 from ._sqlite_wal_multi_reader_crash_worker import _checkpoint_is_busy, _commit_value
-from ._sqlite_wal_reader_crash_worker import _kill_reader, _read_snapshot, _read_value, _start_reader
+from ._sqlite_wal_reader_crash_worker import _kill_reader, _read_snapshot, _read_value
+
+_WORKER_MODULE = "systems_conformance._sqlite_wal_newer_reader_crash_worker"
+
+
+def _reader(database: str, expected: int) -> int:
+    connection = sqlite3.connect(database, isolation_level=None, timeout=0.0)
+    try:
+        connection.execute("PRAGMA busy_timeout = 0")
+        mode = str(connection.execute("PRAGMA journal_mode").fetchone()[0]).lower()
+        if mode != "wal":
+            raise RuntimeError(f"reader WAL unavailable: {mode!r}")
+        connection.execute("BEGIN")
+        value = _read_value(connection)
+        if value != expected:
+            raise RuntimeError(f"reader initial value mismatch: {value!r}")
+        print(f"READER_READY:{value}", flush=True)
+        while True:
+            command = sys.stdin.readline()
+            if command == "":
+                raise RuntimeError("reader control pipe closed before forced crash")
+            if command.strip() != "READ":
+                raise RuntimeError(f"reader expected READ command, got {command.strip()!r}")
+            value = _read_value(connection)
+            print(f"SNAPSHOT_VALUE:{value}", flush=True)
+    finally:
+        connection.close()
+
+
+def _start_reader(database: str, expected: int) -> subprocess.Popen[str]:
+    process = subprocess.Popen(
+        [sys.executable, "-m", _WORKER_MODULE, "--reader", database, str(expected)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if process.stdout is None:
+        process.kill()
+        process.communicate(timeout=2.0)
+        raise RuntimeError("reader stdout pipe unavailable")
+    marker = process.stdout.readline().strip()
+    if marker != f"READER_READY:{expected}":
+        if process.poll() is None:
+            process.kill()
+        _, stderr = process.communicate(timeout=2.0)
+        raise RuntimeError(f"reader failed before snapshot: {marker!r} {stderr.strip()!r}")
+    return process
 
 
 def _run() -> bytes:
@@ -89,6 +136,12 @@ def _run() -> bytes:
 
 
 def main() -> int:
+    if len(sys.argv) == 4 and sys.argv[1] == "--reader":
+        try:
+            return _reader(sys.argv[2], int(sys.argv[3]))
+        except (OSError, RuntimeError, ValueError, sqlite3.Error) as exc:
+            print(f"target_error: {exc}", file=sys.stderr)
+            return 1
     if len(sys.argv) != 1:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
