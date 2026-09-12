@@ -10,6 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import BinaryIO
 
+from ._windows_job import WindowsJob, WindowsJobError
 from .model import ExecutionResult, StreamCapture
 
 DEFAULT_MAX_INPUT_BYTES = 16 * 1024 * 1024
@@ -80,7 +81,10 @@ def _write_stdin(stream: BinaryIO, data: bytes) -> None:
 
 
 def _terminate_process_tree(
-    process: subprocess.Popen[bytes], *, root_may_have_exited: bool = False
+    process: subprocess.Popen[bytes],
+    *,
+    root_may_have_exited: bool = False,
+    windows_job: WindowsJob | None = None,
 ) -> None:
     if process.poll() is not None and not root_may_have_exited:
         return
@@ -93,6 +97,12 @@ def _terminate_process_tree(
         return
 
     if os.name == "nt":
+        if windows_job is not None:
+            try:
+                windows_job.terminate()
+                return
+            except WindowsJobError:
+                pass
         try:
             completed = subprocess.run(
                 ["taskkill", "/PID", str(process.pid), "/T", "/F"],
@@ -215,8 +225,9 @@ def run_process(
     ``max_total_output_bytes`` budget bounds how much output the untrusted process may emit at
     all; exceeding it terminates the process tree and is classified as an infrastructure error.
     Descendants that remain in the POSIX target process group after the root exits are killed
-    even if they detached from inherited stdio; descendants that keep inherited stdio open are
-    also bounded and classified as infrastructure failures on every supported platform.
+    even if they detached from inherited stdio. Windows targets are assigned to a kill-on-close
+    Job Object so redirected-stdio descendants are detected and terminated after the root exits.
+    Descendants that keep inherited stdio open are also bounded on every supported platform.
     OS- and runtime-level spawn failures, including invalid argv/environment encodings, are
     returned as structured infrastructure errors instead of escaping the execution pipeline.
     Timeout and byte ceilings are validated before process launch; booleans are never accepted
@@ -251,6 +262,7 @@ def run_process(
     timed_out = False
     termination_requested = False
     infrastructure_error: str | None = None
+    windows_job: WindowsJob | None = None
 
     try:
         process = subprocess.Popen(
@@ -276,6 +288,14 @@ def run_process(
             stderr=empty,
             infrastructure_error=f"{type(exc).__name__}: {exc}",
         )
+
+    if os.name == "nt":
+        try:
+            windows_job = WindowsJob.create_for_pid(process.pid)
+        except WindowsJobError as exc:
+            infrastructure_error = f"WindowsJobError: {exc}"
+            termination_requested = True
+            _terminate_process_tree(process)
 
     assert process.stdin is not None
     assert process.stdout is not None
@@ -305,64 +325,90 @@ def run_process(
     stderr_thread.start()
     stdin_thread.start()
 
-    deadline = started + timeout_seconds
-    while process.poll() is None:
-        if budget.exceeded.is_set():
+    try:
+        deadline = started + timeout_seconds
+        while process.poll() is None:
+            if budget.exceeded.is_set():
+                infrastructure_error = (
+                    "OutputLimitExceeded: combined stdout/stderr exceeded "
+                    f"{max_total_output_bytes} bytes"
+                )
+                termination_requested = True
+                _terminate_process_tree(process, windows_job=windows_job)
+                break
+            if time.monotonic() >= deadline:
+                timed_out = True
+                termination_requested = True
+                _terminate_process_tree(process, windows_job=windows_job)
+                break
+            time.sleep(0.005)
+
+        if termination_requested:
+            if not _wait_after_termination(process):
+                infrastructure_error = (
+                    "ProcessTerminationTimeout: root process remained alive after cleanup"
+                )
+        else:
+            process.wait()
+
+        if _posix_process_group_survives_root(process):
+            if infrastructure_error is None and not timed_out:
+                infrastructure_error = "ProcessTreeLeak: descendant remained alive after root exit"
+            _terminate_process_tree(process, root_may_have_exited=True)
+
+        if os.name == "nt" and windows_job is not None:
+            try:
+                job_processes = windows_job.active_processes()
+            except WindowsJobError as exc:
+                if infrastructure_error is None and not timed_out:
+                    infrastructure_error = f"WindowsJobError: {exc}"
+                job_processes = 1
+            if job_processes:
+                if infrastructure_error is None and not timed_out:
+                    infrastructure_error = (
+                        "ProcessTreeLeak: descendant remained alive after root exit"
+                    )
+                _terminate_process_tree(
+                    process,
+                    root_may_have_exited=True,
+                    windows_job=windows_job,
+                )
+
+        if not _join_io_threads(io_threads, _POST_EXIT_DRAIN_SECONDS):
+            if infrastructure_error is None and not timed_out:
+                infrastructure_error = (
+                    "ProcessTreeLeak: descendant kept inherited stdio open after root exit"
+                )
+            _terminate_process_tree(
+                process,
+                root_may_have_exited=True,
+                windows_job=windows_job,
+            )
+            _join_io_threads(io_threads, _POST_CLEANUP_JOIN_SECONDS)
+
+        if infrastructure_error is None and budget.exceeded.is_set():
             infrastructure_error = (
                 "OutputLimitExceeded: combined stdout/stderr exceeded "
                 f"{max_total_output_bytes} bytes"
             )
-            termination_requested = True
-            _terminate_process_tree(process)
-            break
-        if time.monotonic() >= deadline:
-            timed_out = True
-            termination_requested = True
-            _terminate_process_tree(process)
-            break
-        time.sleep(0.005)
 
-    if termination_requested:
-        if not _wait_after_termination(process):
-            infrastructure_error = (
-                "ProcessTerminationTimeout: root process remained alive after cleanup"
-            )
-    else:
-        process.wait()
+        return_code = process.returncode
+        stdout_capture = stdout_accumulator.snapshot()
+        stderr_capture = stderr_accumulator.snapshot()
+        duration_ms = round((time.monotonic() - started) * 1000)
+        terminating_signal = -return_code if return_code is not None and return_code < 0 else None
+        exit_code = return_code if return_code is not None and return_code >= 0 else None
 
-    if _posix_process_group_survives_root(process):
-        if infrastructure_error is None and not timed_out:
-            infrastructure_error = "ProcessTreeLeak: descendant remained alive after root exit"
-        _terminate_process_tree(process, root_may_have_exited=True)
-
-    if not _join_io_threads(io_threads, _POST_EXIT_DRAIN_SECONDS):
-        if infrastructure_error is None and not timed_out:
-            infrastructure_error = (
-                "ProcessTreeLeak: descendant kept inherited stdio open after root exit"
-            )
-        _terminate_process_tree(process, root_may_have_exited=True)
-        _join_io_threads(io_threads, _POST_CLEANUP_JOIN_SECONDS)
-
-    if infrastructure_error is None and budget.exceeded.is_set():
-        infrastructure_error = (
-            "OutputLimitExceeded: combined stdout/stderr exceeded "
-            f"{max_total_output_bytes} bytes"
+        return ExecutionResult(
+            argv=normalized_argv,
+            duration_ms=duration_ms,
+            timed_out=timed_out,
+            exit_code=exit_code,
+            signal=terminating_signal,
+            stdout=stdout_capture,
+            stderr=stderr_capture,
+            infrastructure_error=infrastructure_error,
         )
-
-    return_code = process.returncode
-    stdout_capture = stdout_accumulator.snapshot()
-    stderr_capture = stderr_accumulator.snapshot()
-    duration_ms = round((time.monotonic() - started) * 1000)
-    terminating_signal = -return_code if return_code is not None and return_code < 0 else None
-    exit_code = return_code if return_code is not None and return_code >= 0 else None
-
-    return ExecutionResult(
-        argv=normalized_argv,
-        duration_ms=duration_ms,
-        timed_out=timed_out,
-        exit_code=exit_code,
-        signal=terminating_signal,
-        stdout=stdout_capture,
-        stderr=stderr_capture,
-        infrastructure_error=infrastructure_error,
-    )
+    finally:
+        if windows_job is not None:
+            windows_job.close()
