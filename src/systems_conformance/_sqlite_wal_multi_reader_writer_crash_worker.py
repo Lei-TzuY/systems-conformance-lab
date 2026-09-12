@@ -9,12 +9,8 @@ import tempfile
 import time
 
 from ._sqlite_wal_multi_reader_crash_worker import _checkpoint_is_busy, _commit_value
-from ._sqlite_wal_reader_crash_worker import (
-    _kill_reader,
-    _read_snapshot,
-    _read_value,
-    _start_reader,
-)
+from ._sqlite_wal_newer_reader_crash_worker import _start_reader
+from ._sqlite_wal_reader_crash_worker import _kill_reader, _read_snapshot, _read_value
 
 _WORKER_MODULE = "systems_conformance._sqlite_wal_multi_reader_writer_crash_worker"
 
