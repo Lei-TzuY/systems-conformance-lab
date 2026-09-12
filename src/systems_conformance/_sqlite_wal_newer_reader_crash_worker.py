@@ -30,7 +30,9 @@ def _reader(database: str, expected: int) -> int:
             if command == "":
                 raise RuntimeError("reader control pipe closed before forced crash")
             if command.strip() != "READ":
-                raise RuntimeError(f"reader expected READ command, got {command.strip()!r}")
+                raise RuntimeError(
+                    f"reader expected READ command, got {command.strip()!r}"
+                )
             value = _read_value(connection)
             print(f"SNAPSHOT_VALUE:{value}", flush=True)
     finally:
@@ -54,18 +56,24 @@ def _start_reader(database: str, expected: int) -> subprocess.Popen[str]:
         if process.poll() is None:
             process.kill()
         _, stderr = process.communicate(timeout=2.0)
-        raise RuntimeError(f"reader failed before snapshot: {marker!r} {stderr.strip()!r}")
+        raise RuntimeError(
+            f"reader failed before snapshot: {marker!r} {stderr.strip()!r}"
+        )
     return process
 
 
 def _run() -> bytes:
-    with tempfile.TemporaryDirectory(prefix="systems-conformance-wal-newer-reader-crash-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="systems-conformance-wal-newer-reader-crash-"
+    ) as directory:
         database = str(pathlib.Path(directory) / "target.sqlite")
         connection = sqlite3.connect(database, isolation_level=None)
         try:
             connection.execute("CREATE TABLE items(v INTEGER NOT NULL)")
             connection.execute("INSERT INTO items VALUES (20)")
-            journal_mode = str(connection.execute("PRAGMA journal_mode = WAL").fetchone()[0]).lower()
+            journal_mode = str(
+                connection.execute("PRAGMA journal_mode = WAL").fetchone()[0]
+            ).lower()
             if journal_mode != "wal":
                 raise RuntimeError(f"WAL unavailable: {journal_mode!r}")
             connection.execute("PRAGMA wal_autocheckpoint = 0")
@@ -83,13 +91,17 @@ def _run() -> bytes:
 
             busy_with_two = _checkpoint_is_busy(database)
             if not busy_with_two:
-                raise RuntimeError("checkpoint unexpectedly completed with two pinned readers")
+                raise RuntimeError(
+                    "checkpoint unexpectedly completed with two pinned readers"
+                )
 
             _kill_reader(newer_reader)
             _read_snapshot(older_reader, 20)
             busy_after_newer_crash = _checkpoint_is_busy(database)
             if not busy_after_newer_crash:
-                raise RuntimeError("newer reader crash incorrectly released older reader checkpoint state")
+                raise RuntimeError(
+                    "newer reader crash incorrectly released older reader checkpoint state"
+                )
 
             _kill_reader(older_reader)
             busy_after_final_crash = _checkpoint_is_busy(database)
@@ -114,25 +126,33 @@ def _run() -> bytes:
             verified.close()
 
         if post_crash_write != 23 or durable_value != 23 or not integrity or final_busy:
-            raise RuntimeError("newer-reader crash recovery did not preserve durable write/checkpoint state")
+            raise RuntimeError(
+                "newer-reader crash recovery did not preserve durable write/checkpoint state"
+            )
 
-        return (json.dumps({
-            "journal_mode": journal_mode,
-            "older_reader_snapshot": 20,
-            "first_writer_committed_value": first_commit,
-            "newer_reader_snapshot": 21,
-            "second_writer_committed_value": second_commit,
-            "checkpoint_busy_with_two_readers": busy_with_two,
-            "newer_reader_forced_crash": True,
-            "older_reader_snapshot_after_newer_crash": 20,
-            "checkpoint_busy_after_newer_reader_crash": busy_after_newer_crash,
-            "older_reader_forced_crash": True,
-            "checkpoint_busy_after_final_reader_crash": busy_after_final_crash,
-            "post_crash_write_value": post_crash_write,
-            "fresh_reopen_value": durable_value,
-            "fresh_reopen_integrity": "ok",
-            "fresh_reopen_checkpoint_busy": final_busy,
-        }, separators=(",", ":")) + "\n").encode()
+        return (
+            json.dumps(
+                {
+                    "journal_mode": journal_mode,
+                    "older_reader_snapshot": 20,
+                    "first_writer_committed_value": first_commit,
+                    "newer_reader_snapshot": 21,
+                    "second_writer_committed_value": second_commit,
+                    "checkpoint_busy_with_two_readers": busy_with_two,
+                    "newer_reader_forced_crash": True,
+                    "older_reader_snapshot_after_newer_crash": 20,
+                    "checkpoint_busy_after_newer_reader_crash": busy_after_newer_crash,
+                    "older_reader_forced_crash": True,
+                    "checkpoint_busy_after_final_reader_crash": busy_after_final_crash,
+                    "post_crash_write_value": post_crash_write,
+                    "fresh_reopen_value": durable_value,
+                    "fresh_reopen_integrity": "ok",
+                    "fresh_reopen_checkpoint_busy": final_busy,
+                },
+                separators=(",", ":"),
+            )
+            + "\n"
+        ).encode()
 
 
 def main() -> int:
@@ -146,7 +166,10 @@ def main() -> int:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
     if sys.stdin.buffer.read(1):
-        print("protocol_error: WAL newer-reader crash target requires empty input", file=sys.stderr)
+        print(
+            "protocol_error: WAL newer-reader crash target requires empty input",
+            file=sys.stderr,
+        )
         return 2
     try:
         sys.stdout.buffer.write(_run())
