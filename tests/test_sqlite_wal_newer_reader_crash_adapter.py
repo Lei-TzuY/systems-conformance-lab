@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 
 from systems_conformance.harness import DifferentialHarness
-from systems_conformance.sqlite_wal_newer_reader_crash_adapter import SQLiteWALNewerReaderCrashTarget
+from systems_conformance.sqlite_wal_newer_reader_crash_adapter import (
+    SQLiteWALNewerReaderCrashTarget,
+)
 
 
 def _execute(target: SQLiteWALNewerReaderCrashTarget, case: bytes = b""):
-    return target.as_command_target().execute(case, timeout_seconds=12.0, max_output_bytes=4096, max_total_output_bytes=8192)
+    return target.as_command_target().execute(
+        case,
+        timeout_seconds=12.0,
+        max_output_bytes=4096,
+        max_total_output_bytes=8192,
+    )
 
 
 def test_newer_reader_crash_preserves_older_checkpoint_constraint() -> None:
@@ -41,12 +48,19 @@ def test_newer_reader_crash_target_rejects_nonempty_untrusted_input() -> None:
     assert result.timed_out is False
     assert result.exit_code == 2
     assert result.stdout.text == ""
-    assert result.stderr.text.strip() == "protocol_error: WAL newer-reader crash target requires empty input"
+    assert (
+        result.stderr.text.strip()
+        == "protocol_error: WAL newer-reader crash target requires empty input"
+    )
 
 
 def test_real_harness_repeats_newer_reader_crash_target_deterministically() -> None:
     target = SQLiteWALNewerReaderCrashTarget()
-    harness = DifferentialHarness(candidate=target.as_command_target(), oracle=target.as_command_target(), timeout_seconds=12.0)
+    harness = DifferentialHarness(
+        candidate=target.as_command_target(),
+        oracle=target.as_command_target(),
+        timeout_seconds=12.0,
+    )
     run = harness.evaluate(b"")
     assert run.candidate.exit_code == 0, run.candidate.stderr.text
     assert run.oracle.exit_code == 0, run.oracle.stderr.text
