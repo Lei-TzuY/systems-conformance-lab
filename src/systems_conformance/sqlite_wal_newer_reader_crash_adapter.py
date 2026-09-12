@@ -11,4 +11,10 @@ class SQLiteWALNewerReaderCrashTarget:
     """Real WAL target validating older snapshot retention after newer reader crash."""
 
     def as_command_target(self) -> CommandTarget:
-        return CommandTarget((sys.executable, "-m", "systems_conformance._sqlite_wal_newer_reader_crash_worker"))
+        return CommandTarget(
+            (
+                sys.executable,
+                "-m",
+                "systems_conformance._sqlite_wal_newer_reader_crash_worker",
+            )
+        )
