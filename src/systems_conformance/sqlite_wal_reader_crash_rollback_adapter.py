@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass
 
-from systems_conformance.target import CommandTarget
+from .harness import CommandTarget
 
 
 @dataclass(frozen=True, slots=True)
