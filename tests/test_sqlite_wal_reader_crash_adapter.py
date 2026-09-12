@@ -34,6 +34,14 @@ def test_reader_crash_releases_snapshot_for_recovery() -> None:
         "post_reader_crash_write_value": 9,
         "post_reader_crash_write_durable": 9,
         "fresh_reopen_checkpoint_busy": False,
+        "overlap_reader_initial_value": 9,
+        "overlap_writer_pending_value": 10,
+        "overlap_reader_snapshot_while_writer_active": 9,
+        "overlap_reader_forced_crash": True,
+        "overlap_writer_committed_after_reader_crash": 10,
+        "overlap_fresh_reopen_value": 10,
+        "overlap_fresh_reopen_integrity": "ok",
+        "overlap_fresh_reopen_checkpoint_busy": False,
     }
 
 
