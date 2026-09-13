@@ -177,7 +177,7 @@ def _run() -> bytes:
 
 
 def main() -> int:
-    if len(sys.argv) == 6 and sys.argv[1] in {"--pre-replace-writer", "--post-replace-writer"}:
+    if len(sys.argv) == 5 and sys.argv[1] in {"--pre-replace-writer", "--post-replace-writer"}:
         try:
             return _child(
                 sys.argv[1],
