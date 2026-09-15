@@ -15,6 +15,7 @@ from .fault import FaultSpec
 _WORKER_MODULE = "systems_conformance._durable_publish_crash_worker"
 _PRE_DIRSYNC_READY = "PRE_DIRSYNC_READY"
 _POST_PUBLISH_READY = "POST_PUBLISH_READY"
+_FAILURE_MODEL = "process-kill-same-mount"
 
 
 def _spec(operation: str, occurrence: int) -> FaultSpec:
@@ -94,7 +95,11 @@ def _force_kill_after_marker(
 
 def _run() -> bytes:
     if os.name == "nt":
-        return b'{"supported":false,"reason":"directory fsync unavailable"}\n'
+        return (
+            b'{"supported":false,"reason":"directory fsync unavailable",'
+            b'"failure_model":"process-kill-same-mount",'
+            b'"power_loss_recovery_proven":false,"remount_performed":false}\n'
+        )
 
     generations = {
         "initial": b"generation-0\n",
@@ -150,6 +155,9 @@ def _run() -> bytes:
 
         payload = {
             "supported": True,
+            "failure_model": _FAILURE_MODEL,
+            "power_loss_recovery_proven": False,
+            "remount_performed": False,
             "initial_value": generations["initial"].decode().strip(),
             "pre_dirsync_replace_completed": True,
             "pre_dirsync_writer_forced_crash": True,
