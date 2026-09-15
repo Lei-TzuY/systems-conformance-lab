@@ -24,11 +24,20 @@ def test_durable_publish_exposes_directory_sync_crash_boundaries() -> None:
     assert result.stderr.text == ""
     payload = json.loads(result.stdout.text)
     if os.name == "nt":
-        assert payload == {"supported": False, "reason": "directory fsync unavailable"}
+        assert payload == {
+            "supported": False,
+            "reason": "directory fsync unavailable",
+            "failure_model": "process-kill-same-mount",
+            "power_loss_recovery_proven": False,
+            "remount_performed": False,
+        }
         return
 
     assert payload == {
         "supported": True,
+        "failure_model": "process-kill-same-mount",
+        "power_loss_recovery_proven": False,
+        "remount_performed": False,
         "initial_value": "generation-0",
         "pre_dirsync_replace_completed": True,
         "pre_dirsync_writer_forced_crash": True,
