@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import os
 
-from systems_conformance.durable_publish_file_sync_crash_adapter import DurablePublishFileSyncCrashTarget
+from systems_conformance.durable_publish_file_sync_crash_adapter import (
+    DurablePublishFileSyncCrashTarget,
+)
 from systems_conformance.harness import DifferentialHarness
 
 
