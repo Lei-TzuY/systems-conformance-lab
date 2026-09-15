@@ -50,9 +50,16 @@ def _child(staging: pathlib.Path, payload: bytes) -> int:
         time.sleep(60.0)
 
 
-def _force_kill_before_replace(destination: pathlib.Path, staging: pathlib.Path, payload: bytes) -> None:
+def _force_kill_before_replace(staging: pathlib.Path, payload: bytes) -> None:
     process = subprocess.Popen(
-        [sys.executable, "-m", _WORKER_MODULE, "--pre-replace-writer", str(destination), str(staging), payload.hex()],
+        [
+            sys.executable,
+            "-m",
+            _WORKER_MODULE,
+            "--pre-replace-writer",
+            str(staging),
+            payload.hex(),
+        ],
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -64,7 +71,9 @@ def _force_kill_before_replace(destination: pathlib.Path, staging: pathlib.Path,
         marker = process.stdout.readline().strip()
         if marker != _PRE_REPLACE_READY:
             stderr = "" if process.stderr is None else process.stderr.read().strip()
-            raise RuntimeError(f"writer failed before crash checkpoint: marker={marker!r} stderr={stderr!r}")
+            raise RuntimeError(
+                f"writer failed before crash checkpoint: marker={marker!r} stderr={stderr!r}"
+            )
         process.kill()
         _, stderr = process.communicate(timeout=2.0)
         if process.returncode == 0:
@@ -86,7 +95,9 @@ def _run() -> bytes:
     faulted = b"generation-2\n"
     recovered = b"generation-3\n"
 
-    with tempfile.TemporaryDirectory(prefix="systems-conformance-file-sync-crash-") as directory:
+    with tempfile.TemporaryDirectory(
+        prefix="systems-conformance-file-sync-crash-"
+    ) as directory:
         root = pathlib.Path(directory)
         destination = root / "published.bin"
         crash_staging = root / "crash.tmp"
@@ -96,7 +107,7 @@ def _run() -> bytes:
         _write_synced(destination, initial)
         _sync_directory(root)
 
-        _force_kill_before_replace(destination, crash_staging, crashed)
+        _force_kill_before_replace(crash_staging, crashed)
         value_after_crash = destination.read_bytes()
         crashed_staging_value = crash_staging.read_bytes()
         if value_after_crash != initial:
@@ -137,12 +148,12 @@ def _run() -> bytes:
 
 
 def main() -> int:
-    if len(sys.argv) == 5 and sys.argv[1] == "--pre-replace-writer":
+    if len(sys.argv) == 4 and sys.argv[1] == "--pre-replace-writer":
         if os.name == "nt":
             print("target_error: directory fsync unavailable", file=sys.stderr)
             return 1
         try:
-            return _child(pathlib.Path(sys.argv[3]), bytes.fromhex(sys.argv[4]))
+            return _child(pathlib.Path(sys.argv[2]), bytes.fromhex(sys.argv[3]))
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"target_error: {exc}", file=sys.stderr)
             return 1
@@ -151,7 +162,10 @@ def main() -> int:
         print("protocol_error: unexpected arguments", file=sys.stderr)
         return 2
     if sys.stdin.buffer.read(1):
-        print("protocol_error: durable publish file-sync crash target requires empty input", file=sys.stderr)
+        print(
+            "protocol_error: durable publish file-sync crash target requires empty input",
+            file=sys.stderr,
+        )
         return 2
 
     try:
