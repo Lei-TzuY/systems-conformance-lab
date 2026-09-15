@@ -13,3 +13,9 @@ The public adapter uses a fixed argv `CommandTarget`; it does not interpolate un
 Windows reports the capability as unsupported because this repository's real `FaultingDirectorySync` contract intentionally does not emulate directory `fsync` there. The target therefore avoids making a fake cross-platform durability claim while still participating deterministically in the harness matrix.
 
 This contract is intentionally bounded. It validates process-crash checkpoints and the host filesystem APIs actually invoked by the publisher; it does not simulate sudden power loss, storage-controller cache behavior, or guarantee stronger filesystem semantics than the host provides.
+
+The adapter reports this boundary in its machine-readable result as
+`failure_model="process-kill-same-mount"`, `remount_performed=false`, and
+`power_loss_recovery_proven=false`. Consumers must preserve these fields when
+presenting the result; a green run is evidence for the stated process-crash
+contract only, never an implicit upgrade to reboot or power-loss recovery.
