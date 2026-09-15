@@ -43,7 +43,7 @@ def _sync_directory(directory: pathlib.Path) -> None:
         os.close(fd)
 
 
-def _child(destination: pathlib.Path, staging: pathlib.Path, payload: bytes) -> int:
+def _child(staging: pathlib.Path, payload: bytes) -> int:
     _write_synced(staging, payload)
     print(_PRE_REPLACE_READY, flush=True)
     while True:
@@ -97,9 +97,11 @@ def _run() -> bytes:
         _sync_directory(root)
 
         _force_kill_before_replace(destination, crash_staging, crashed)
-        if destination.read_bytes() != initial:
+        value_after_crash = destination.read_bytes()
+        crashed_staging_value = crash_staging.read_bytes()
+        if value_after_crash != initial:
             raise RuntimeError("pre-replace crash changed published destination")
-        if crash_staging.read_bytes() != crashed:
+        if crashed_staging_value != crashed:
             raise RuntimeError("pre-replace crash lost synchronized staging payload")
 
         injected_errno = None
@@ -122,9 +124,9 @@ def _run() -> bytes:
             "supported": True,
             "initial_value": initial.decode().strip(),
             "pre_replace_writer_forced_crash": True,
-            "value_after_pre_replace_crash": destination.read_bytes().decode().strip(),
+            "value_after_pre_replace_crash": value_after_crash.decode().strip(),
             "crashed_staging_preserved": crash_staging.exists(),
-            "crashed_staging_value": crash_staging.read_bytes().decode().strip(),
+            "crashed_staging_value": crashed_staging_value.decode().strip(),
             "injected_file_sync_errno": "EIO",
             "file_sync_failure_destination_unchanged": True,
             "file_sync_failure_staging_preserved": fault_staging.exists(),
@@ -140,7 +142,7 @@ def main() -> int:
             print("target_error: directory fsync unavailable", file=sys.stderr)
             return 1
         try:
-            return _child(pathlib.Path(sys.argv[2]), pathlib.Path(sys.argv[3]), bytes.fromhex(sys.argv[4]))
+            return _child(pathlib.Path(sys.argv[3]), bytes.fromhex(sys.argv[4]))
         except (OSError, RuntimeError, ValueError) as exc:
             print(f"target_error: {exc}", file=sys.stderr)
             return 1
