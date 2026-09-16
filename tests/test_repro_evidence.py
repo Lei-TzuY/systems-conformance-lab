@@ -104,6 +104,6 @@ def test_tampered_repro_evidence_is_rejected_before_target_execution(tmp_path) -
     bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(ValueError, match="cannot claim power-loss recovery"):
-        load_evidenced_repro_bundle(bundle.path)
+        harness.replay_repro(bundle.path)
 
     assert not marker.exists()
