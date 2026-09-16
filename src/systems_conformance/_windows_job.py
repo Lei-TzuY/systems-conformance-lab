@@ -2,11 +2,31 @@ from __future__ import annotations
 
 import ctypes
 import os
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 
 
 class WindowsJobError(RuntimeError):
     pass
+
+
+_ACTIVE_PROCESS_QUIESCENCE_SECONDS = 0.1
+_ACTIVE_PROCESS_POLL_SECONDS = 0.005
+
+
+def _wait_for_zero_active_processes(
+    query: Callable[[], int],
+    *,
+    timeout_seconds: float = _ACTIVE_PROCESS_QUIESCENCE_SECONDS,
+) -> int:
+    """Allow bounded Job accounting lag to settle without hiding live descendants."""
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        active = query()
+        if active == 0 or time.monotonic() >= deadline:
+            return active
+        time.sleep(_ACTIVE_PROCESS_POLL_SECONDS)
 
 
 if os.name == "nt":
@@ -138,7 +158,7 @@ class WindowsJob:
             raise
         return job
 
-    def active_processes(self) -> int:
+    def _query_active_processes(self) -> int:
         if os.name != "nt" or self._handle is None:
             return 0
         accounting = _JOBOBJECT_BASIC_ACCOUNTING_INFORMATION()
@@ -152,6 +172,9 @@ class WindowsJob:
         ):
             raise _win_error("QueryInformationJobObject")
         return int(accounting.ActiveProcesses)
+
+    def active_processes(self) -> int:
+        return _wait_for_zero_active_processes(self._query_active_processes)
 
     def terminate(self, exit_code: int = 1) -> None:
         if os.name != "nt" or self._handle is None:
