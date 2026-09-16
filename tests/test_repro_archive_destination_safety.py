@@ -56,7 +56,7 @@ def test_import_rejects_existing_dangling_symlink_destination(tmp_path) -> None:
 def test_import_rechecks_dangling_symlink_before_publication(tmp_path, monkeypatch) -> None:
     harness, archive = make_archive(tmp_path)
     destination = tmp_path / "imported"
-    real_loader = repro_archive_module.load_repro_bundle
+    real_loader = repro_archive_module.load_evidenced_repro_bundle
     calls = 0
 
     def load_then_claim_destination(path, **kwargs):
@@ -67,7 +67,11 @@ def test_import_rechecks_dangling_symlink_before_publication(tmp_path, monkeypat
             create_dangling_symlink_or_skip(destination)
         return loaded
 
-    monkeypatch.setattr(repro_archive_module, "load_repro_bundle", load_then_claim_destination)
+    monkeypatch.setattr(
+        repro_archive_module,
+        "load_evidenced_repro_bundle",
+        load_then_claim_destination,
+    )
 
     with pytest.raises(FileExistsError, match="destination already exists"):
         import_repro_archive(archive, destination)
@@ -83,7 +87,7 @@ def test_import_does_not_clobber_empty_directory_claimed_at_publication(
 ) -> None:
     harness, archive = make_archive(tmp_path)
     destination = tmp_path / "imported"
-    real_loader = repro_archive_module.load_repro_bundle
+    real_loader = repro_archive_module.load_evidenced_repro_bundle
     calls = 0
 
     def load_then_claim_empty_directory(path, **kwargs):
@@ -96,7 +100,7 @@ def test_import_does_not_clobber_empty_directory_claimed_at_publication(
 
     monkeypatch.setattr(
         repro_archive_module,
-        "load_repro_bundle",
+        "load_evidenced_repro_bundle",
         load_then_claim_empty_directory,
     )
 
