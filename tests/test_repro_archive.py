@@ -1,3 +1,4 @@
+import json
 import stat
 import sys
 import zipfile
@@ -46,6 +47,79 @@ def test_export_is_deterministic_and_import_replays_real_targets(tmp_path) -> No
     assert replay.reproduced
     assert replay.run.signature == replay.bundle.signature
     assert replay.bundle.metadata == {"source": "archive-integration"}
+
+
+def test_archive_round_trip_preserves_valid_failure_model_evidence(tmp_path) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    metadata = {
+        "failure_model": "process-kill-same-mount",
+        "remount_performed": False,
+        "power_loss_recovery_proven": False,
+        "source": "archive-evidence-integration",
+    }
+    original = harness.write_repro(
+        tmp_path / "original-evidenced", input_bytes=b"BUG", metadata=metadata
+    )
+
+    archive = export_repro_archive(original.path, tmp_path / "evidenced.zip")
+    imported = import_repro_archive(archive, tmp_path / "imported-evidenced")
+    replay = harness.replay_repro(imported.path)
+
+    assert replay.reproduced
+    assert replay.bundle.metadata == metadata
+
+
+def test_export_rejects_invalid_failure_model_evidence_before_publication(tmp_path) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    original = harness.write_repro(
+        tmp_path / "invalid-evidence-source",
+        input_bytes=b"BUG",
+        metadata={
+            "failure_model": "process-kill-same-mount",
+            "remount_performed": False,
+            "power_loss_recovery_proven": False,
+        },
+    )
+    manifest = json.loads(original.manifest_path.read_text(encoding="utf-8"))
+    manifest["metadata"]["power_loss_recovery_proven"] = True
+    original.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    destination = tmp_path / "invalid-evidence.zip"
+
+    with pytest.raises(ValueError, match="cannot claim power-loss recovery"):
+        export_repro_archive(original.path, destination)
+
+    assert not destination.exists()
+
+
+def test_import_rejects_invalid_failure_model_evidence_before_publication(tmp_path) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    original = harness.write_repro(
+        tmp_path / "archive-source",
+        input_bytes=b"BUG",
+        metadata={
+            "failure_model": "process-kill-same-mount",
+            "remount_performed": False,
+            "power_loss_recovery_proven": False,
+        },
+    )
+    valid_archive = export_repro_archive(original.path, tmp_path / "valid.zip")
+    invalid_archive = tmp_path / "invalid-import.zip"
+    with zipfile.ZipFile(valid_archive, mode="r") as source:
+        input_bytes = source.read("input.bin")
+        manifest = json.loads(source.read("manifest.json"))
+    manifest["metadata"]["power_loss_recovery_proven"] = True
+    with zipfile.ZipFile(invalid_archive, mode="w", compression=zipfile.ZIP_STORED) as archive:
+        archive.writestr(repro_archive_module._regular_zip_info("input.bin"), input_bytes)
+        archive.writestr(
+            repro_archive_module._regular_zip_info("manifest.json"), json.dumps(manifest).encode()
+        )
+
+    destination = tmp_path / "invalid-imported"
+    with pytest.raises(ValueError, match="cannot claim power-loss recovery"):
+        import_repro_archive(invalid_archive, destination)
+
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".invalid-imported.import-*"))
 
 
 def test_export_publishes_only_after_complete_archive_and_replays_real_targets(
@@ -119,7 +193,7 @@ def test_export_archives_validated_snapshot_when_source_changes_after_load(
         input_bytes=b"BUG",
         metadata={"source": "snapshot-integration"},
     )
-    real_loader = repro_archive_module.load_repro_bundle
+    real_loader = repro_archive_module.load_evidenced_repro_bundle
     calls = 0
 
     def load_then_mutate(path, **kwargs):
@@ -130,7 +204,7 @@ def test_export_archives_validated_snapshot_when_source_changes_after_load(
             original.input_path.write_bytes(b"BAD")
         return loaded
 
-    monkeypatch.setattr(repro_archive_module, "load_repro_bundle", load_then_mutate)
+    monkeypatch.setattr(repro_archive_module, "load_evidenced_repro_bundle", load_then_mutate)
 
     archive = export_repro_archive(original.path, tmp_path / "snapshot.zip")
     imported = import_repro_archive(archive, tmp_path / "imported")

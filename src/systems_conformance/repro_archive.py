@@ -14,8 +14,8 @@ from .repro import (
     DEFAULT_MAX_REPRO_INPUT_BYTES,
     DEFAULT_MAX_REPRO_MANIFEST_BYTES,
     ReproBundle,
-    load_repro_bundle,
 )
+from .repro_evidence import load_evidenced_repro_bundle
 
 REPRO_ARCHIVE_MEMBERS = ("input.bin", "manifest.json")
 DEFAULT_MAX_REPRO_ARCHIVE_BYTES = (
@@ -90,7 +90,7 @@ def _export_repro_archive(
     elif file_sync_spec is not None or directory_sync_spec is not None:
         raise ValueError("fault specs require durable repro archive export")
 
-    loaded = load_repro_bundle(
+    loaded = load_evidenced_repro_bundle(
         bundle_path,
         max_input_bytes=max_input_bytes,
         max_manifest_bytes=max_manifest_bytes,
@@ -109,7 +109,7 @@ def _export_repro_archive(
         snapshot = Path(snapshot_dir)
         (snapshot / "input.bin").write_bytes(loaded.input_bytes)
         (snapshot / "manifest.json").write_bytes(manifest)
-        load_repro_bundle(
+        load_evidenced_repro_bundle(
             snapshot,
             max_input_bytes=max_input_bytes,
             max_manifest_bytes=max_manifest_bytes,
@@ -215,16 +215,17 @@ def import_repro_archive(
     max_manifest_bytes: int = DEFAULT_MAX_REPRO_MANIFEST_BYTES,
     max_archive_bytes: int = DEFAULT_MAX_REPRO_ARCHIVE_BYTES,
 ) -> ReproBundle:
-    """Import a deterministic repro archive through the normal bundle validator.
+    """Import a deterministic repro archive through the evidenced bundle validator.
 
     Only the two direct-child regular members emitted by
     :func:`export_repro_archive` are accepted. The source archive is first read
     into one bounded immutable byte snapshot, so later path mutation cannot
     change the ZIP bytes being validated. Unexpected paths, duplicates,
-    encryption, compression-method drift, oversized artifacts, and invalid
-    bundle contents are rejected before the destination becomes visible.
-    Publication uses an atomic OS no-replace directory primitive, so a competing
-    destination entry cannot be clobbered between validation and publication.
+    encryption, compression-method drift, oversized artifacts, invalid bundle
+    contents, and inconsistent failure-model evidence are rejected before the
+    destination becomes visible. Publication uses an atomic OS no-replace
+    directory primitive, so a competing destination entry cannot be clobbered
+    between validation and publication.
     """
 
     if max_archive_bytes <= 0:
@@ -280,7 +281,7 @@ def import_repro_archive(
     try:
         (staging / "input.bin").write_bytes(input_bytes)
         (staging / "manifest.json").write_bytes(manifest_bytes)
-        load_repro_bundle(
+        load_evidenced_repro_bundle(
             staging,
             max_input_bytes=max_input_bytes,
             max_manifest_bytes=max_manifest_bytes,
