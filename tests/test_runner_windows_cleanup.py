@@ -9,7 +9,30 @@ from pathlib import Path
 import pytest
 
 import systems_conformance.runner as runner_module
-from systems_conformance._windows_job import WindowsJob
+from systems_conformance._windows_job import WindowsJob, _wait_for_zero_active_processes
+
+
+def test_windows_job_accounting_allows_bounded_quiescence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observations = iter((1, 1, 0))
+    sleeps: list[float] = []
+
+    monkeypatch.setattr(time, "sleep", sleeps.append)
+
+    assert _wait_for_zero_active_processes(lambda: next(observations)) == 0
+    assert sleeps == [0.005, 0.005]
+
+
+def test_windows_job_accounting_does_not_hide_persistent_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clock = iter((0.0, 0.0, 0.05, 0.1))
+
+    monkeypatch.setattr(time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(time, "sleep", lambda _seconds: None)
+
+    assert _wait_for_zero_active_processes(lambda: 1, timeout_seconds=0.1) == 1
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows Job Object contract")
