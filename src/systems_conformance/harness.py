@@ -12,7 +12,8 @@ from typing import Any
 from .comparator import ComparisonResult, compare_results
 from .failure import FailureSignature, failure_signature
 from .model import ExecutionResult
-from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
+from .repro import LoadedReproBundle, ReproBundle, write_repro_bundle
+from .repro_evidence import load_evidenced_repro_bundle
 from .runner import (
     DEFAULT_MAX_INPUT_BYTES,
     DEFAULT_MAX_OUTPUT_BYTES,
@@ -275,7 +276,7 @@ class DifferentialHarness:
         explicitly disable this check when intentionally testing a reproducer against a
         changed target.
         """
-        bundle = load_repro_bundle(
+        bundle = load_evidenced_repro_bundle(
             path,
             max_input_bytes=max_input_bytes,
             max_manifest_bytes=max_manifest_bytes,
