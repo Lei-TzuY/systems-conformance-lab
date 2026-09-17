@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from systems_conformance import reduce_case
+from systems_conformance import CandidateBudgetExhausted, reduce_case
 
 
 def test_reducer_accepts_first_strictly_smaller_failure_preserving_candidate() -> None:
@@ -68,7 +68,7 @@ def test_reducer_bounds_non_progressing_candidate_enumeration() -> None:
             visits += 1
             yield value
 
-    with pytest.raises(RuntimeError, match="candidate enumeration budget exhausted"):
+    with pytest.raises(CandidateBudgetExhausted) as caught:
         reduce_case(
             "abc",
             candidates=candidates,
@@ -77,6 +77,9 @@ def test_reducer_bounds_non_progressing_candidate_enumeration() -> None:
             max_candidate_visits=7,
         )
 
+    assert caught.value.candidate_visits == 7
+    assert caught.value.max_candidate_visits == 7
+    assert str(caught.value) == "reducer candidate enumeration budget exhausted after 7 visits (limit 7)"
     assert visits == 8
 
 
