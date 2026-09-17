@@ -41,8 +41,35 @@ def _has_explicit_non_regular_unix_type(member: zipfile.ZipInfo) -> bool:
 
 
 def _read_bounded_bytes(path: Path, *, max_bytes: int, label: str) -> bytes:
-    with path.open("rb") as source:
-        data = source.read(max_bytes + 1)
+    """Read one bounded regular-file snapshot without accepting path replacement."""
+
+    path = Path(path)
+    try:
+        before = path.lstat()
+    except OSError as exc:
+        raise ValueError(f"{label} must be a regular file: {path}") from exc
+    if not stat.S_ISREG(before.st_mode):
+        raise ValueError(f"{label} must be a regular file: {path}")
+
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    try:
+        fd = os.open(path, flags)
+    except OSError as exc:
+        raise ValueError(f"{label} could not be opened as validated: {path}") from exc
+
+    try:
+        opened = os.fstat(fd)
+        if not stat.S_ISREG(opened.st_mode):
+            raise ValueError(f"{label} opened object is not a regular file: {path}")
+        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+            raise ValueError(f"{label} path changed while being opened: {path}")
+        with os.fdopen(fd, "rb", closefd=True) as source:
+            fd = -1
+            data = source.read(max_bytes + 1)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+
     if len(data) > max_bytes:
         raise ValueError(f"{label} exceeds configured byte limit")
     return data
