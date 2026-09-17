@@ -104,6 +104,32 @@ def test_real_target_pipeline_finds_reduces_and_persists_failure(tmp_path) -> No
     assert manifest["metadata"] == {"source": "end-to-end-integration"}
 
 
+def test_real_target_reduction_tolerates_bounded_non_progressing_candidates() -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    initial = b"xxBUG"
+    run = harness.evaluate(initial)
+    assert run.signature is not None
+
+    def noisy_candidates(value: bytes):
+        yield value
+        yield value + b"noise"
+        if value.startswith(b"x"):
+            yield value[1:]
+
+    reduction = reduce_case(
+        initial,
+        candidates=noisy_candidates,
+        preserves_failure=lambda case: harness.preserves_failure(case, run.signature),
+        measure=len,
+        max_evaluations=10,
+        max_candidate_visits=10,
+    )
+
+    assert reduction.reduced == b"BUG"
+    assert reduction.accepted_steps == 2
+    assert reduction.exhausted_budget is False
+
+
 def test_deterministic_byte_mutations_find_real_process_mismatch() -> None:
     harness = DifferentialHarness(
         candidate=target(HIGH_BIT_BUGGY_SCRIPT),
