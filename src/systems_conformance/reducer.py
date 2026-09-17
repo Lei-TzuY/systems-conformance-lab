@@ -18,6 +18,18 @@ class ReductionResult(Generic[CaseT]):
     exhausted_budget: bool
 
 
+class CandidateBudgetExhausted(RuntimeError):
+    """Infrastructure failure raised when reducer candidate enumeration is exhausted."""
+
+    def __init__(self, *, candidate_visits: int, max_candidate_visits: int) -> None:
+        self.candidate_visits = candidate_visits
+        self.max_candidate_visits = max_candidate_visits
+        super().__init__(
+            "reducer candidate enumeration budget exhausted "
+            f"after {candidate_visits} visits (limit {max_candidate_visits})"
+        )
+
+
 def reduce_case(
     initial: CaseT,
     *,
@@ -35,10 +47,11 @@ def reduce_case(
     progress explicit. Candidate enumeration has its own global visit budget so
     an adapter cannot evade ``max_evaluations`` by yielding an unbounded stream
     of non-progressing candidates. Exhausting that structural budget raises
-    ``RuntimeError`` rather than being mistaken for product-level
-    non-reproduction. The initial case must reproduce the target failure.
-    Predicate exceptions are intentionally not swallowed so harness failures
-    cannot be mistaken for product-level non-reproduction.
+    ``CandidateBudgetExhausted`` with deterministic work evidence rather than
+    being mistaken for product-level non-reproduction. The initial case must
+    reproduce the target failure. Predicate exceptions are intentionally not
+    swallowed so harness failures cannot be mistaken for product-level
+    non-reproduction.
     """
 
     if max_evaluations <= 0:
@@ -63,7 +76,10 @@ def reduce_case(
         accepted = False
         for candidate in candidates(current):
             if candidate_visits >= max_candidate_visits:
-                raise RuntimeError("reducer candidate enumeration budget exhausted")
+                raise CandidateBudgetExhausted(
+                    candidate_visits=candidate_visits,
+                    max_candidate_visits=max_candidate_visits,
+                )
             candidate_visits += 1
 
             candidate_measure = measure(candidate)

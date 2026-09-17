@@ -27,7 +27,7 @@ from .fuzz import (
 )
 from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproReplay
 from .model import ExecutionResult, StreamCapture
-from .reducer import ReductionResult, reduce_case
+from .reducer import CandidateBudgetExhausted, ReductionResult, reduce_case
 from .replace_fault import FaultingAtomicReplace
 from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
 from .repro_archive import (
@@ -77,6 +77,7 @@ __all__ = [
     "ArchiveReproReplay",
     "ArchiveRetentionEvidence",
     "ArchiveRetentionResult",
+    "CandidateBudgetExhausted",
     "CommandTarget",
     "ComparisonResult",
     "DeterministicByteMutations",
