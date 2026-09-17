@@ -59,6 +59,27 @@ def test_reducer_skips_non_progressing_candidates_without_evaluation() -> None:
     assert evaluated == ["abc", "ab"]
 
 
+def test_reducer_bounds_non_progressing_candidate_enumeration() -> None:
+    visits = 0
+
+    def candidates(value: str):
+        nonlocal visits
+        while True:
+            visits += 1
+            yield value
+
+    with pytest.raises(RuntimeError, match="candidate enumeration budget exhausted"):
+        reduce_case(
+            "abc",
+            candidates=candidates,
+            preserves_failure=lambda _: True,
+            measure=len,
+            max_candidate_visits=7,
+        )
+
+    assert visits == 8
+
+
 def test_reducer_stops_at_evaluation_budget() -> None:
     result = reduce_case(
         "abcd",
@@ -82,6 +103,15 @@ def test_reducer_rejects_invalid_budget_and_negative_measure() -> None:
             preserves_failure=lambda _: True,
             measure=len,
             max_evaluations=0,
+        )
+
+    with pytest.raises(ValueError, match="max_candidate_visits"):
+        reduce_case(
+            "x",
+            candidates=lambda _: [],
+            preserves_failure=lambda _: True,
+            measure=len,
+            max_candidate_visits=0,
         )
 
     with pytest.raises(ValueError, match="non-negative"):

@@ -25,19 +25,26 @@ def reduce_case(
     preserves_failure: Callable[[CaseT], bool],
     measure: Callable[[CaseT], int],
     max_evaluations: int = 1_000,
+    max_candidate_visits: int = 10_000,
 ) -> ReductionResult[CaseT]:
     """Greedily reduce a failing case while preserving its failure class.
 
     Candidate order is significant and therefore defines deterministic
     first-improvement behavior. A candidate is only evaluated when its measure
     is strictly smaller than the current case, which prevents cycles and makes
-    progress explicit. The initial case must reproduce the target failure.
+    progress explicit. Candidate enumeration has its own global visit budget so
+    an adapter cannot evade ``max_evaluations`` by yielding an unbounded stream
+    of non-progressing candidates. Exhausting that structural budget raises
+    ``RuntimeError`` rather than being mistaken for product-level
+    non-reproduction. The initial case must reproduce the target failure.
     Predicate exceptions are intentionally not swallowed so harness failures
     cannot be mistaken for product-level non-reproduction.
     """
 
     if max_evaluations <= 0:
         raise ValueError("max_evaluations must be positive")
+    if max_candidate_visits <= 0:
+        raise ValueError("max_candidate_visits must be positive")
 
     initial_measure = measure(initial)
     if initial_measure < 0:
@@ -50,10 +57,15 @@ def reduce_case(
     current = initial
     current_measure = initial_measure
     accepted_steps = 0
+    candidate_visits = 0
 
     while evaluations < max_evaluations:
         accepted = False
         for candidate in candidates(current):
+            if candidate_visits >= max_candidate_visits:
+                raise RuntimeError("reducer candidate enumeration budget exhausted")
+            candidate_visits += 1
+
             candidate_measure = measure(candidate)
             if candidate_measure < 0:
                 raise ValueError("measure must be non-negative")
