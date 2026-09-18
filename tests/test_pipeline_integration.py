@@ -87,6 +87,7 @@ def test_real_target_pipeline_finds_reduces_and_persists_failure(tmp_path) -> No
     assert reduction.reduced == b"BUG"
     assert reduction.accepted_steps > 0
     assert reduction.evaluations < 40
+    assert reduction.termination_reason == "fixed_point"
 
     bundle = harness.write_repro(
         tmp_path / "repro",
@@ -129,6 +130,7 @@ def test_real_target_reduction_tolerates_bounded_non_progressing_candidates() ->
     assert reduction.accepted_steps == 2
     assert reduction.candidate_visits == 8
     assert reduction.exhausted_budget is False
+    assert reduction.termination_reason == "fixed_point"
 
 
 def test_deterministic_byte_mutations_find_real_process_mismatch() -> None:

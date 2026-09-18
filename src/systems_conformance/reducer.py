@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
-from typing import Generic, TypeVar
+from dataclasses import dataclass, field
+from typing import Generic, Literal, TypeVar
 
 CaseT = TypeVar("CaseT")
 
@@ -17,6 +17,14 @@ class ReductionResult(Generic[CaseT]):
     candidate_visits: int
     accepted_steps: int
     exhausted_budget: bool
+    termination_reason: Literal["fixed_point", "evaluation_budget"] = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "termination_reason",
+            "evaluation_budget" if self.exhausted_budget else "fixed_point",
+        )
 
 
 class CandidateBudgetExhausted(RuntimeError):
@@ -48,13 +56,14 @@ def reduce_case(
     progress explicit. Candidate enumeration has its own global visit budget so
     an adapter cannot evade ``max_evaluations`` by yielding an unbounded stream
     of non-progressing candidates. Successful results expose the total number of
-    visited candidates, including candidates skipped without evaluation, so
-    callers can persist deterministic reducer work evidence. Exhausting the
-    structural budget raises ``CandidateBudgetExhausted`` with the same work
-    evidence rather than being mistaken for product-level non-reproduction. The
-    initial case must reproduce the target failure. Predicate exceptions are
-    intentionally not swallowed so harness failures cannot be mistaken for
-    product-level non-reproduction.
+    visited candidates, including candidates skipped without evaluation, plus a
+    machine-readable termination reason distinguishing a fixed point from
+    evaluation-budget exhaustion, so callers can persist deterministic reducer
+    work evidence. Exhausting the structural budget raises
+    ``CandidateBudgetExhausted`` with the same work evidence rather than being
+    mistaken for product-level non-reproduction. The initial case must reproduce
+    the target failure. Predicate exceptions are intentionally not swallowed so
+    harness failures cannot be mistaken for product-level non-reproduction.
     """
 
     if max_evaluations <= 0:
