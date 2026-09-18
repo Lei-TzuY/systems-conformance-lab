@@ -15,6 +15,7 @@ from systems_conformance import (
     run_failure_discovery_campaign,
 )
 from systems_conformance.comparator import ComparisonResult
+from systems_conformance.triage import REDUCTION_EVIDENCE_METADATA_KEY
 
 ECHO_SCRIPT = "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data)"
 BUGGY_SCRIPT = (
@@ -52,6 +53,29 @@ def test_rejects_inconsistent_captured_signature_before_execution(tmp_path) -> N
     assert not (tmp_path / "repro").exists()
 
 
+def test_rejects_caller_collision_with_reserved_reduction_metadata(tmp_path) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    run = harness.evaluate(b"BUG")
+    assert run.signature is not None
+    failure = FuzzFailure(
+        evaluation_index=0,
+        case=b"BUG",
+        comparison=run.comparison,
+        signature=run.signature,
+    )
+
+    with pytest.raises(ValueError, match="reserved for reducer evidence"):
+        reduce_failure_to_repro(
+            failure,
+            harness=harness,
+            destination=tmp_path / "repro",
+            candidates=hierarchical_byte_deletions,
+            metadata={REDUCTION_EVIDENCE_METADATA_KEY: {"spoofed": True}},
+        )
+
+    assert not (tmp_path / "repro").exists()
+
+
 def test_real_fuzz_witness_reduces_and_publishes_same_failure(tmp_path) -> None:
     harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
     corpus = (b"ordinary", b"prefix BUG suffix")
@@ -83,8 +107,17 @@ def test_real_fuzz_witness_reduces_and_publishes_same_failure(tmp_path) -> None:
     assert manifest["failure_signature"]["kind"] == failure.signature.kind
     assert tuple(manifest["failure_signature"]["dimensions"]) == failure.signature.dimensions
     assert manifest["comparison"]["classification"] == "product_mismatch"
-    assert manifest["metadata"] == {"source": "fuzz-witness-triage"}
+    assert manifest["metadata"]["source"] == "fuzz-witness-triage"
+    assert manifest["metadata"][REDUCTION_EVIDENCE_METADATA_KEY] == {
+        "schema_version": "systems-conformance.reduction-evidence.v1",
+        "evaluations": result.reduction.evaluations,
+        "candidate_visits": result.reduction.candidate_visits,
+        "accepted_steps": result.reduction.accepted_steps,
+        "exhausted_budget": result.reduction.exhausted_budget,
+        "termination_reason": result.reduction.termination_reason,
+    }
 
     replay = harness.replay_repro(result.repro.path)
     assert replay.reproduced is True
     assert replay.run.signature == failure.signature
+    assert replay.bundle.metadata[REDUCTION_EVIDENCE_METADATA_KEY]["termination_reason"] == "fixed_point"
