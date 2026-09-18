@@ -14,6 +14,7 @@ class ReductionResult(Generic[CaseT]):
     original: CaseT
     reduced: CaseT
     evaluations: int
+    candidate_visits: int
     accepted_steps: int
     exhausted_budget: bool
 
@@ -46,12 +47,14 @@ def reduce_case(
     is strictly smaller than the current case, which prevents cycles and makes
     progress explicit. Candidate enumeration has its own global visit budget so
     an adapter cannot evade ``max_evaluations`` by yielding an unbounded stream
-    of non-progressing candidates. Exhausting that structural budget raises
-    ``CandidateBudgetExhausted`` with deterministic work evidence rather than
-    being mistaken for product-level non-reproduction. The initial case must
-    reproduce the target failure. Predicate exceptions are intentionally not
-    swallowed so harness failures cannot be mistaken for product-level
-    non-reproduction.
+    of non-progressing candidates. Successful results expose the total number of
+    visited candidates, including candidates skipped without evaluation, so
+    callers can persist deterministic reducer work evidence. Exhausting the
+    structural budget raises ``CandidateBudgetExhausted`` with the same work
+    evidence rather than being mistaken for product-level non-reproduction. The
+    initial case must reproduce the target failure. Predicate exceptions are
+    intentionally not swallowed so harness failures cannot be mistaken for
+    product-level non-reproduction.
     """
 
     if max_evaluations <= 0:
@@ -92,6 +95,7 @@ def reduce_case(
                     original=initial,
                     reduced=current,
                     evaluations=evaluations,
+                    candidate_visits=candidate_visits,
                     accepted_steps=accepted_steps,
                     exhausted_budget=True,
                 )
@@ -109,6 +113,7 @@ def reduce_case(
                 original=initial,
                 reduced=current,
                 evaluations=evaluations,
+                candidate_visits=candidate_visits,
                 accepted_steps=accepted_steps,
                 exhausted_budget=False,
             )
@@ -117,6 +122,7 @@ def reduce_case(
         original=initial,
         reduced=current,
         evaluations=evaluations,
+        candidate_visits=candidate_visits,
         accepted_steps=accepted_steps,
         exhausted_budget=True,
     )
