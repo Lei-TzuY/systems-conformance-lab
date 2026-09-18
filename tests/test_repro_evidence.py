@@ -91,6 +91,11 @@ def test_reduction_evidence_is_typed_and_semantically_bounded() -> None:
     [
         ({"evaluations": True}, TypeError, "evaluations must be an integer"),
         ({"candidate_visits": -1}, ValueError, "candidate_visits must be non-negative"),
+        (
+            {"evaluations": 4, "candidate_visits": 2, "accepted_steps": 1},
+            ValueError,
+            "candidate_visits cannot be fewer than evaluated candidates",
+        ),
         ({"accepted_steps": 4}, ValueError, "accepted_steps exceeds evaluated candidates"),
         (
             {"exhausted_budget": True, "termination_reason": "fixed_point"},
@@ -190,6 +195,33 @@ def test_tampered_reduction_evidence_is_rejected_before_target_execution(tmp_pat
     bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     with pytest.raises(ValueError, match="termination_reason contradicts exhausted_budget"):
+        harness.replay_repro(bundle.path)
+
+    assert not marker.exists()
+
+
+def test_impossible_reducer_visit_evidence_is_rejected_before_target_execution(tmp_path) -> None:
+    marker = tmp_path / "executed"
+    marker_script = (
+        f"from pathlib import Path; Path({str(marker)!r}).write_text('ran'); " + BUGGY_SCRIPT
+    )
+    harness = DifferentialHarness(candidate=_target(marker_script), oracle=_target(ECHO_SCRIPT))
+    bundle = harness.write_repro(
+        tmp_path / "repro",
+        input_bytes=b"BUG",
+        metadata=_reduction_metadata(),
+    )
+    assert marker.exists()
+    marker.unlink()
+
+    manifest = json.loads(bundle.manifest_path.read_text(encoding="utf-8"))
+    evidence = manifest["metadata"][REDUCTION_EVIDENCE_METADATA_KEY]
+    evidence["evaluations"] = 5
+    evidence["candidate_visits"] = 2
+    evidence["accepted_steps"] = 1
+    bundle.manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="candidate_visits cannot be fewer than evaluated candidates"):
         harness.replay_repro(bundle.path)
 
     assert not marker.exists()
