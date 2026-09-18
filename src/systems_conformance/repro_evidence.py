@@ -121,6 +121,8 @@ def validate_reduction_evidence(metadata: dict[str, Any]) -> ReductionEvidence |
 
     if counters["evaluations"] < 1:
         raise ValueError("reduction evidence evaluations must include the initial evaluation")
+    if counters["candidate_visits"] < counters["evaluations"] - 1:
+        raise ValueError("reduction evidence candidate_visits cannot be fewer than evaluated candidates")
     if counters["accepted_steps"] > counters["evaluations"] - 1:
         raise ValueError("reduction evidence accepted_steps exceeds evaluated candidates")
     if counters["accepted_steps"] > counters["candidate_visits"]:
