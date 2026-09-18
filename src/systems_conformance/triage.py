@@ -10,9 +10,10 @@ from .fuzz import FuzzFailure
 from .harness import DifferentialHarness
 from .reducer import ReductionResult, reduce_case
 from .repro import ReproBundle
-
-REDUCTION_EVIDENCE_METADATA_KEY = "systems_conformance_reduction"
-REDUCTION_EVIDENCE_SCHEMA_VERSION = "systems-conformance.reduction-evidence.v1"
+from .repro_evidence import (
+    REDUCTION_EVIDENCE_METADATA_KEY,
+    REDUCTION_EVIDENCE_SCHEMA_VERSION,
+)
 
 
 @dataclass(frozen=True, slots=True)
