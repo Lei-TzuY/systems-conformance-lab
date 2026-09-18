@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import asdict
+
 import pytest
 
 from systems_conformance import CandidateBudgetExhausted, reduce_case
@@ -32,6 +34,8 @@ def test_reducer_accepts_first_strictly_smaller_failure_preserving_candidate() -
     assert result.evaluations == 5
     assert result.candidate_visits == 5
     assert result.exhausted_budget is False
+    assert result.termination_reason == "fixed_point"
+    assert asdict(result)["termination_reason"] == "fixed_point"
     assert seen == ["abcdef", "abcde", "abc", "ab", "a"]
 
 
@@ -99,6 +103,8 @@ def test_reducer_stops_at_evaluation_budget() -> None:
     assert result.candidate_visits == 2
     assert result.accepted_steps == 2
     assert result.exhausted_budget is True
+    assert result.termination_reason == "evaluation_budget"
+    assert asdict(result)["termination_reason"] == "evaluation_budget"
 
 
 def test_reducer_rejects_invalid_budget_and_negative_measure() -> None:
