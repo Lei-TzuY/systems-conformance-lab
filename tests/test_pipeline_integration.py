@@ -127,6 +127,7 @@ def test_real_target_reduction_tolerates_bounded_non_progressing_candidates() ->
 
     assert reduction.reduced == b"BUG"
     assert reduction.accepted_steps == 2
+    assert reduction.candidate_visits == 8
     assert reduction.exhausted_budget is False
 
 
