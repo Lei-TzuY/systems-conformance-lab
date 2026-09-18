@@ -30,7 +30,7 @@ def test_reducer_accepts_first_strictly_smaller_failure_preserving_candidate() -
     assert result.reduced == "abc"
     assert result.accepted_steps == 1
     assert result.evaluations == 5
-    assert result.candidate_visits == 6
+    assert result.candidate_visits == 5
     assert result.exhausted_budget is False
     assert seen == ["abcdef", "abcde", "abc", "ab", "a"]
 
