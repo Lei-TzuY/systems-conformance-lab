@@ -30,6 +30,7 @@ def test_reducer_accepts_first_strictly_smaller_failure_preserving_candidate() -
     assert result.reduced == "abc"
     assert result.accepted_steps == 1
     assert result.evaluations == 5
+    assert result.candidate_visits == 6
     assert result.exhausted_budget is False
     assert seen == ["abcdef", "abcde", "abc", "ab", "a"]
 
@@ -56,6 +57,7 @@ def test_reducer_skips_non_progressing_candidates_without_evaluation() -> None:
 
     assert result.reduced == "abc"
     assert result.evaluations == 2
+    assert result.candidate_visits == 3
     assert evaluated == ["abc", "ab"]
 
 
@@ -94,6 +96,7 @@ def test_reducer_stops_at_evaluation_budget() -> None:
 
     assert result.reduced == "ab"
     assert result.evaluations == 3
+    assert result.candidate_visits == 2
     assert result.accepted_steps == 2
     assert result.exhausted_budget is True
 
