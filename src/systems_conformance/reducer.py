@@ -55,11 +55,13 @@ def reduce_case(
     is strictly smaller than the current case, which prevents cycles and makes
     progress explicit. Candidate enumeration has its own global visit budget so
     an adapter cannot evade ``max_evaluations`` by yielding an unbounded stream
-    of non-progressing candidates. Successful results expose the total number of
-    visited candidates, including candidates skipped without evaluation, plus a
-    machine-readable termination reason distinguishing a fixed point from
-    evaluation-budget exhaustion, so callers can persist deterministic reducer
-    work evidence. Exhausting the structural budget raises
+    of non-progressing candidates. The structural budget is checked before
+    requesting the next item from the candidate iterator, so untrusted generator
+    work beyond the configured ceiling cannot execute. Successful results expose
+    the total number of visited candidates, including candidates skipped without
+    evaluation, plus a machine-readable termination reason distinguishing a fixed
+    point from evaluation-budget exhaustion, so callers can persist deterministic
+    reducer work evidence. Exhausting the structural budget raises
     ``CandidateBudgetExhausted`` with the same work evidence rather than being
     mistaken for product-level non-reproduction. The initial case must reproduce
     the target failure. Predicate exceptions are intentionally not swallowed so
@@ -86,12 +88,17 @@ def reduce_case(
 
     while evaluations < max_evaluations:
         accepted = False
-        for candidate in candidates(current):
+        candidate_iterator = iter(candidates(current))
+        while True:
             if candidate_visits >= max_candidate_visits:
                 raise CandidateBudgetExhausted(
                     candidate_visits=candidate_visits,
                     max_candidate_visits=max_candidate_visits,
                 )
+            try:
+                candidate = next(candidate_iterator)
+            except StopIteration:
+                break
             candidate_visits += 1
 
             candidate_measure = measure(candidate)

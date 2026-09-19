@@ -87,9 +87,12 @@ def test_triage_enforces_caller_candidate_visit_budget_before_publication(tmp_pa
         comparison=run.comparison,
         signature=run.signature,
     )
+    pulls = 0
 
     def non_progressing_candidates(case: bytes):
+        nonlocal pulls
         while True:
+            pulls += 1
             yield case
 
     with pytest.raises(CandidateBudgetExhausted) as raised:
@@ -103,6 +106,7 @@ def test_triage_enforces_caller_candidate_visit_budget_before_publication(tmp_pa
 
     assert raised.value.candidate_visits == 3
     assert raised.value.max_candidate_visits == 3
+    assert pulls == 3
     assert not (tmp_path / "repro").exists()
 
 
