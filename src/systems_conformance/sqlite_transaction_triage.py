@@ -40,6 +40,7 @@ def reduce_sqlite_transaction_failure_to_repro(
     harness: DifferentialHarness,
     destination: Path,
     max_evaluations_per_phase: int = 1_000,
+    max_candidate_visits_per_phase: int = 10_000,
     metadata: dict[str, Any] | None = None,
 ) -> SQLiteTransactionReducedFailureRepro:
     """Reduce one SQLite transaction witness across structured dimensions.
@@ -47,9 +48,10 @@ def reduce_sqlite_transaction_failure_to_repro(
     Each phase independently revalidates the current case against the exact stable
     failure signature captured by the fuzz witness. Fault occurrence is reduced
     first so an earlier checkpoint can unlock statement deletion; scalar parameters
-    are simplified after the structural shape stabilizes. The final minimized input
-    is re-executed once more by ``write_repro`` before evidence is published, so
-    phase drift cannot silently produce a different product or infrastructure failure.
+    are simplified after the structural shape stabilizes. Evaluation and candidate-
+    pull budgets are independently bounded per phase. The final minimized input is
+    re-executed once more by ``write_repro`` before evidence is published, so phase
+    drift cannot silently produce a different product or infrastructure failure.
     """
 
     captured_signature = failure_signature(failure.comparison)
@@ -65,6 +67,7 @@ def reduce_sqlite_transaction_failure_to_repro(
         preserves_failure=preserves,
         measure=sqlite_transaction_fault_occurrence_complexity,
         max_evaluations=max_evaluations_per_phase,
+        max_candidate_visits=max_candidate_visits_per_phase,
     )
     statement_reduction = reduce_case(
         fault_reduction.reduced,
@@ -72,6 +75,7 @@ def reduce_sqlite_transaction_failure_to_repro(
         preserves_failure=preserves,
         measure=sqlite_transaction_statement_count,
         max_evaluations=max_evaluations_per_phase,
+        max_candidate_visits=max_candidate_visits_per_phase,
     )
     parameter_reduction = reduce_case(
         statement_reduction.reduced,
@@ -79,6 +83,7 @@ def reduce_sqlite_transaction_failure_to_repro(
         preserves_failure=preserves,
         measure=sqlite_transaction_parameter_complexity,
         max_evaluations=max_evaluations_per_phase,
+        max_candidate_visits=max_candidate_visits_per_phase,
     )
 
     repro = harness.write_repro(
