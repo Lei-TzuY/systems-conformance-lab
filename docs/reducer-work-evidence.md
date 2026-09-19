@@ -7,7 +7,7 @@ A `ReductionResult` records `evaluations`, `candidate_visits`, `accepted_steps`,
 - `fixed_point` means the deterministic candidate schedule completed without accepting another strictly smaller failure-preserving case.
 - `evaluation_budget` means the failure-predicate evaluation ceiling stopped the run before a fixed point was established.
 
-Candidate-enumeration exhaustion remains a separate infrastructure failure. It raises `CandidateBudgetExhausted` with `candidate_visits` and `max_candidate_visits`; it is not converted into a successful `ReductionResult` or a product-level non-reproduction.
+Candidate-enumeration exhaustion remains a separate infrastructure failure. It raises `CandidateBudgetExhausted` with `candidate_visits` and `max_candidate_visits`; it is not converted into a successful `ReductionResult` or a product-level non-reproduction. The ceiling is checked before requesting the next value from the candidate iterator. Consequently an untrusted generator cannot execute an N+1 candidate pull after N visits have consumed the configured structural budget; reaching the ceiling fails closed rather than probing the iterator for exhaustion.
 
 This distinction lets triage and repro tooling retain the exact reason a minimized case was returned. A case produced at an evaluation ceiling can therefore be treated as a bounded intermediate result rather than being mistaken for a proven local fixed point.
 
