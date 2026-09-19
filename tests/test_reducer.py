@@ -65,7 +65,7 @@ def test_reducer_skips_non_progressing_candidates_without_evaluation() -> None:
     assert evaluated == ["abc", "ab"]
 
 
-def test_reducer_bounds_non_progressing_candidate_enumeration() -> None:
+def test_reducer_bounds_non_progressing_candidate_enumeration_before_next_pull() -> None:
     visits = 0
 
     def candidates(value: str):
@@ -86,7 +86,7 @@ def test_reducer_bounds_non_progressing_candidate_enumeration() -> None:
     assert caught.value.candidate_visits == 7
     assert caught.value.max_candidate_visits == 7
     assert str(caught.value) == "reducer candidate enumeration budget exhausted after 7 visits (limit 7)"
-    assert visits == 8
+    assert visits == 7
 
 
 def test_reducer_stops_at_evaluation_budget() -> None:
