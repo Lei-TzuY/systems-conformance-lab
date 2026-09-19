@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from systems_conformance import (
+    CandidateBudgetExhausted,
     DifferentialHarness,
     FailureSignature,
     FuzzFailure,
@@ -64,6 +67,30 @@ def test_real_sqlite_query_failure_reduces_across_all_phases_and_replays(tmp_pat
     replay = harness.replay_repro(result.repro.path)
     assert replay.reproduced is True
     assert replay.run.signature == failure.signature
+
+
+def test_real_sqlite_query_triage_fails_closed_on_structural_budget(tmp_path) -> None:
+    candidate = SQLiteQueryTarget(enable_faults=True).as_command_target()
+    oracle = SQLiteQueryTarget(enable_faults=False).as_command_target()
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    initial = _case()
+    run = harness.evaluate(initial)
+    assert run.signature is not None
+    failure = FuzzFailure(0, initial, run.comparison, run.signature)
+    destination = tmp_path / "repro"
+
+    with pytest.raises(CandidateBudgetExhausted) as exc_info:
+        reduce_sqlite_query_failure_to_repro(
+            failure,
+            harness=harness,
+            destination=destination,
+            max_evaluations_per_phase=64,
+            max_candidate_visits_per_phase=1,
+        )
+
+    assert exc_info.value.candidate_visits == 1
+    assert exc_info.value.max_candidate_visits == 1
+    assert not destination.exists()
 
 
 def test_query_triage_rejects_inconsistent_failure_signature(tmp_path) -> None:
