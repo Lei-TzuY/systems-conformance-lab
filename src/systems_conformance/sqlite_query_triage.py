@@ -40,6 +40,7 @@ def reduce_sqlite_query_failure_to_repro(
     harness: DifferentialHarness,
     destination: Path,
     max_evaluations_per_phase: int = 1_000,
+    max_candidate_visits_per_phase: int = 10_000,
     metadata: dict[str, Any] | None = None,
 ) -> SQLiteQueryReducedFailureRepro:
     """Reduce one SQLite query witness across structured dimensions.
@@ -47,7 +48,8 @@ def reduce_sqlite_query_failure_to_repro(
     Each phase revalidates the current case against the exact stable failure
     signature captured by the fuzz witness. Fault occurrence is reduced first so
     an earlier setup checkpoint can unlock setup deletion; scalar query parameters
-    are simplified after the setup shape stabilizes. The final minimized input is
+    are simplified after the setup shape stabilizes. Evaluation and candidate-pull
+    budgets are independently bounded per phase. The final minimized input is
     re-executed once more by ``write_repro`` before evidence is published.
     """
 
@@ -64,6 +66,7 @@ def reduce_sqlite_query_failure_to_repro(
         preserves_failure=preserves,
         measure=sqlite_query_fault_occurrence_complexity,
         max_evaluations=max_evaluations_per_phase,
+        max_candidate_visits=max_candidate_visits_per_phase,
     )
     setup_reduction = reduce_case(
         fault_reduction.reduced,
@@ -71,6 +74,7 @@ def reduce_sqlite_query_failure_to_repro(
         preserves_failure=preserves,
         measure=sqlite_query_setup_statement_count,
         max_evaluations=max_evaluations_per_phase,
+        max_candidate_visits=max_candidate_visits_per_phase,
     )
     parameter_reduction = reduce_case(
         setup_reduction.reduced,
@@ -78,6 +82,7 @@ def reduce_sqlite_query_failure_to_repro(
         preserves_failure=preserves,
         measure=sqlite_query_parameter_complexity,
         max_evaluations=max_evaluations_per_phase,
+        max_candidate_visits=max_candidate_visits_per_phase,
     )
 
     repro = harness.write_repro(
