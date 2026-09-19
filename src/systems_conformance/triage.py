@@ -45,6 +45,7 @@ def reduce_failure_to_repro(
     candidates: Callable[[bytes], Iterable[bytes]],
     measure: Callable[[bytes], int] = len,
     max_evaluations: int = 1_000,
+    max_candidate_visits: int = 10_000,
     metadata: dict[str, Any] | None = None,
 ) -> ReducedFailureRepro:
     """Revalidate, reduce, and publish one captured fuzz failure deterministically.
@@ -53,9 +54,12 @@ def reduce_failure_to_repro(
     any target executes. Reduction then uses the live harness as the preservation
     predicate, so infrastructure and product failures cannot silently cross classes.
     Repro publication performs one final signature check before writing evidence.
-    Deterministic reducer work accounting is persisted under a reserved metadata key
-    so replay and offline triage can distinguish a fixed point from a budget-bounded
-    intermediate result without retaining the in-memory ``ReductionResult``.
+    Both reducer work budgets remain caller-controlled at this composition boundary;
+    candidate-budget exhaustion propagates as infrastructure failure and never
+    publishes a partial repro. Deterministic reducer work accounting is persisted
+    under a reserved metadata key so replay and offline triage can distinguish a
+    fixed point from a budget-bounded intermediate result without retaining the
+    in-memory ``ReductionResult``.
     """
 
     captured_signature = failure_signature(failure.comparison)
@@ -72,6 +76,7 @@ def reduce_failure_to_repro(
         preserves_failure=lambda case: harness.preserves_failure(case, failure.signature),
         measure=measure,
         max_evaluations=max_evaluations,
+        max_candidate_visits=max_candidate_visits,
     )
     repro_metadata = dict(metadata or {})
     repro_metadata[REDUCTION_EVIDENCE_METADATA_KEY] = _reduction_evidence(reduction)

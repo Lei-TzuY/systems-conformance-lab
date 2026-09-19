@@ -11,6 +11,10 @@ Candidate-enumeration exhaustion remains a separate infrastructure failure. It r
 
 This distinction lets triage and repro tooling retain the exact reason a minimized case was returned. A case produced at an evaluation ceiling can therefore be treated as a bounded intermediate result rather than being mistaken for a proven local fixed point.
 
+## Triage budget boundary
+
+`reduce_failure_to_repro` exposes both reducer ceilings: `max_evaluations` bounds failure-predicate execution and `max_candidate_visits` bounds structural candidate enumeration. The latter is forwarded unchanged to `reduce_case`, so a target-specific candidate adapter cannot force the composition layer to consume the reducer's larger default structural budget. If that structural budget is exhausted, `CandidateBudgetExhausted` propagates and no repro bundle is published. This preserves the infrastructure-vs-product boundary even when a candidate generator is non-progressing or unbounded.
+
 ## Persisted triage evidence
 
 `reduce_failure_to_repro` persists the successful reduction work record in the repro bundle metadata under the reserved `systems_conformance_reduction` key. The record uses schema version `systems-conformance.reduction-evidence.v1` and contains only `evaluations`, `candidate_visits`, `accepted_steps`, `exhausted_budget`, and `termination_reason`; reduced case bytes remain exclusively in `input.bin`.

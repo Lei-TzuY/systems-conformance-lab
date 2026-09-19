@@ -15,6 +15,7 @@ from systems_conformance import (
     run_failure_discovery_campaign,
 )
 from systems_conformance.comparator import ComparisonResult
+from systems_conformance.reducer import CandidateBudgetExhausted
 from systems_conformance.triage import REDUCTION_EVIDENCE_METADATA_KEY
 
 ECHO_SCRIPT = "import sys; data=sys.stdin.buffer.read(); sys.stdout.buffer.write(data)"
@@ -76,6 +77,35 @@ def test_rejects_caller_collision_with_reserved_reduction_metadata(tmp_path) -> 
     assert not (tmp_path / "repro").exists()
 
 
+def test_triage_enforces_caller_candidate_visit_budget_before_publication(tmp_path) -> None:
+    harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
+    run = harness.evaluate(b"BUG")
+    assert run.signature is not None
+    failure = FuzzFailure(
+        evaluation_index=0,
+        case=b"BUG",
+        comparison=run.comparison,
+        signature=run.signature,
+    )
+
+    def non_progressing_candidates(case: bytes):
+        while True:
+            yield case
+
+    with pytest.raises(CandidateBudgetExhausted) as raised:
+        reduce_failure_to_repro(
+            failure,
+            harness=harness,
+            destination=tmp_path / "repro",
+            candidates=non_progressing_candidates,
+            max_candidate_visits=3,
+        )
+
+    assert raised.value.candidate_visits == 3
+    assert raised.value.max_candidate_visits == 3
+    assert not (tmp_path / "repro").exists()
+
+
 def test_real_fuzz_witness_reduces_and_publishes_same_failure(tmp_path) -> None:
     harness = DifferentialHarness(candidate=target(BUGGY_SCRIPT), oracle=target(ECHO_SCRIPT))
     corpus = (b"ordinary", b"prefix BUG suffix")
@@ -95,6 +125,7 @@ def test_real_fuzz_witness_reduces_and_publishes_same_failure(tmp_path) -> None:
         destination=tmp_path / "repro",
         candidates=hierarchical_byte_deletions,
         max_evaluations=100,
+        max_candidate_visits=100,
         metadata={"source": "fuzz-witness-triage"},
     )
 
