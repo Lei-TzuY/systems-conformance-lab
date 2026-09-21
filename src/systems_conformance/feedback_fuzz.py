@@ -11,7 +11,7 @@ FeatureT = TypeVar("FeatureT", bound=Hashable)
 
 
 class FeatureBudgetExhausted(RuntimeError):
-    """Raised when one feedback evaluation enumerates too many features."""
+    """Raised when feedback feature enumeration reaches its structural ceiling."""
 
     def __init__(self, *, feature_visits: int, max_feature_visits: int) -> None:
         self.feature_visits = feature_visits
@@ -89,10 +89,6 @@ def run_feedback_guided_campaign(
         visits = 0
         while True:
             if visits >= max_feature_visits_per_evaluation:
-                try:
-                    next(iterator)
-                except StopIteration:
-                    break
                 raise FeatureBudgetExhausted(
                     feature_visits=visits,
                     max_feature_visits=max_feature_visits_per_evaluation,
