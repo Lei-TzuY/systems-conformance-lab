@@ -89,6 +89,28 @@ def test_reducer_bounds_non_progressing_candidate_enumeration_before_next_pull()
     assert visits == 7
 
 
+def test_reducer_does_not_reinvoke_candidate_factory_after_structural_budget() -> None:
+    factory_calls = 0
+
+    def candidates(value: str) -> list[str]:
+        nonlocal factory_calls
+        factory_calls += 1
+        return [value[:-1]]
+
+    with pytest.raises(CandidateBudgetExhausted) as caught:
+        reduce_case(
+            "abc",
+            candidates=candidates,
+            preserves_failure=lambda _: True,
+            measure=len,
+            max_candidate_visits=1,
+        )
+
+    assert caught.value.candidate_visits == 1
+    assert caught.value.max_candidate_visits == 1
+    assert factory_calls == 1
+
+
 def test_reducer_stops_at_evaluation_budget() -> None:
     result = reduce_case(
         "abcd",
