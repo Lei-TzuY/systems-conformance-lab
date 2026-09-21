@@ -13,6 +13,7 @@ from .durable_repro_import import import_durable_repro_archive
 from .failure import FailureSignature, failure_signature
 from .fault import FaultController, FaultSpec
 from .feedback_fuzz import (
+    FeatureBudgetExhausted,
     FeedbackCampaignResult,
     FeedbackCorpusEntry,
     run_feedback_guided_campaign,
@@ -92,6 +93,7 @@ __all__ = [
     "FaultingDirectorySync",
     "FaultingDurableFilePublisher",
     "FaultingFileSync",
+    "FeatureBudgetExhausted",
     "FeedbackCampaignResult",
     "FeedbackCorpusEntry",
     "FuzzCampaignResult",

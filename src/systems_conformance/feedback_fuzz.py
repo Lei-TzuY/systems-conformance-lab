@@ -10,6 +10,18 @@ CaseT = TypeVar("CaseT")
 FeatureT = TypeVar("FeatureT", bound=Hashable)
 
 
+class FeatureBudgetExhausted(RuntimeError):
+    """Raised when feedback feature enumeration reaches its structural ceiling."""
+
+    def __init__(self, *, feature_visits: int, max_feature_visits: int) -> None:
+        self.feature_visits = feature_visits
+        self.max_feature_visits = max_feature_visits
+        super().__init__(
+            "feedback feature visit budget exhausted "
+            f"({feature_visits}/{max_feature_visits})"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class FeedbackCorpusEntry(Generic[CaseT, FeatureT]):
     case: CaseT
@@ -36,6 +48,7 @@ def run_feedback_guided_campaign(
     max_evaluations: int = 1_000,
     max_corpus_entries: int = 256,
     max_unique_failures: int = 32,
+    max_feature_visits_per_evaluation: int = 4_096,
 ) -> FeedbackCampaignResult[CaseT, FeatureT]:
     """Grow a deterministic corpus while retaining stable failure witnesses.
 
@@ -44,7 +57,11 @@ def run_feedback_guided_campaign(
     is admitted only when it contributes at least one previously unseen feature.
     Independently, the first witness for each stable failure signature is retained
     so expensive feedback executions do not discard product or infrastructure
-    failures. Evaluation, corpus, and unique-failure growth are all strictly bounded.
+    failures. Evaluation, corpus, unique-failure growth, and feature enumeration
+    are all strictly bounded. Feature enumeration is treated as untrusted adapter
+    work: the visit ceiling is checked before requesting the next feature, and
+    exhaustion raises ``FeatureBudgetExhausted`` instead of publishing partial
+    coverage from that evaluation.
     """
 
     if not seeds:
@@ -57,6 +74,8 @@ def run_feedback_guided_campaign(
         raise ValueError("max_corpus_entries must be positive")
     if max_unique_failures <= 0:
         raise ValueError("max_unique_failures must be positive")
+    if max_feature_visits_per_evaluation <= 0:
+        raise ValueError("max_feature_visits_per_evaluation must be positive")
 
     corpus: list[FeedbackCorpusEntry[CaseT, FeatureT]] = []
     seen_features: set[FeatureT] = set()
@@ -64,10 +83,29 @@ def run_feedback_guided_campaign(
     seen_failures: set[FailureSignature] = set()
     evaluations = 0
 
+    def collect_features(raw_features: Iterable[FeatureT]) -> frozenset[FeatureT]:
+        iterator = iter(raw_features)
+        features: set[FeatureT] = set()
+        visits = 0
+        while True:
+            if visits >= max_feature_visits_per_evaluation:
+                raise FeatureBudgetExhausted(
+                    feature_visits=visits,
+                    max_feature_visits=max_feature_visits_per_evaluation,
+                )
+            try:
+                feature = next(iterator)
+            except StopIteration:
+                break
+            visits += 1
+            features.add(feature)
+        return frozenset(features)
+
     def consider(case: CaseT) -> tuple[bool, bool]:
         nonlocal evaluations
         comparison, raw_features = evaluate(case)
         _validate_comparison(comparison)
+        features = collect_features(raw_features)
         evaluation_index = evaluations
         evaluations += 1
 
@@ -83,7 +121,6 @@ def run_feedback_guided_campaign(
                 )
             )
 
-        features = frozenset(raw_features)
         new_features = features.difference(seen_features)
         if new_features:
             seen_features.update(new_features)
