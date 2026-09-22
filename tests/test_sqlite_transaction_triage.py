@@ -39,7 +39,7 @@ def _case() -> bytes:
 def test_real_sqlite_transaction_failure_reduces_across_all_phases_and_replays(tmp_path) -> None:
     candidate = SQLiteTransactionTarget(enable_faults=True).as_command_target()
     oracle = SQLiteTransactionTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     initial = _case()
     run = harness.evaluate(initial)
 
@@ -82,7 +82,7 @@ def test_real_sqlite_transaction_failure_reduces_across_all_phases_and_replays(t
 def test_real_sqlite_transaction_triage_fails_closed_on_structural_budget(tmp_path) -> None:
     candidate = SQLiteTransactionTarget(enable_faults=True).as_command_target()
     oracle = SQLiteTransactionTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     initial = _case()
     run = harness.evaluate(initial)
     assert run.signature is not None

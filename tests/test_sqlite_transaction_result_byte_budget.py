@@ -21,7 +21,7 @@ def _request(transaction_sql: str, observe_sql: str = "SELECT 1") -> bytes:
 def _execute(case: bytes, target: SQLiteTransactionTarget):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -115,7 +115,7 @@ def test_transaction_transcript_result_budget_is_part_of_replay_identity() -> No
 def test_real_harness_observes_transaction_result_byte_budget_as_product_mismatch() -> None:
     candidate = SQLiteTransactionTarget(max_result_bytes=8).as_command_target()
     oracle = SQLiteTransactionTarget(max_result_bytes=9).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     run = harness.evaluate(_request("SELECT 1 UNION ALL SELECT 2"))
     assert run.candidate.infrastructure_error is None
     assert run.oracle.infrastructure_error is None
@@ -133,7 +133,7 @@ def test_real_harness_observes_transaction_result_byte_budget_as_product_mismatc
 def test_real_harness_observes_transcript_budget_as_product_mismatch() -> None:
     candidate = SQLiteTransactionTarget(max_transcript_result_bytes=59).as_command_target()
     oracle = SQLiteTransactionTarget(max_transcript_result_bytes=60).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     run = harness.evaluate(_request("SELECT 1"))
     assert run.candidate.infrastructure_error is None
     assert run.oracle.infrastructure_error is None

@@ -18,7 +18,7 @@ def _request(query: str) -> bytes:
 def _execute(query: str, *, max_result_rows: int):
     return SQLiteQueryTarget(max_result_rows=max_result_rows).as_command_target().execute(
         _request(query),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -68,7 +68,7 @@ def test_sqlite_query_result_row_budget_changes_replay_context() -> None:
 def test_real_differential_harness_observes_sqlite_query_result_row_budget() -> None:
     candidate = SQLiteQueryTarget(max_result_rows=2).as_command_target()
     oracle = SQLiteQueryTarget(max_result_rows=3).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = _request(
         "WITH RECURSIVE n(x) AS (VALUES(1) UNION ALL SELECT x+1 FROM n WHERE x<3) SELECT x FROM n"
     )

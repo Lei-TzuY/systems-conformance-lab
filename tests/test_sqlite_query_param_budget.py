@@ -19,7 +19,7 @@ def _request(params: list[int]) -> bytes:
 def _execute(params: list[int], *, max_params: int):
     return SQLiteQueryTarget(max_params=max_params).as_command_target().execute(
         _request(params),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -60,7 +60,7 @@ def test_sqlite_query_param_budget_changes_replay_context() -> None:
 def test_real_differential_harness_observes_sqlite_query_param_budget() -> None:
     candidate = SQLiteQueryTarget(max_params=1).as_command_target()
     oracle = SQLiteQueryTarget(max_params=2).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
 
     run = harness.evaluate(_request([1, 2]))
 

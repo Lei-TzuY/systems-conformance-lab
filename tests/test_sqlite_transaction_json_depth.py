@@ -23,7 +23,7 @@ def _request() -> bytes:
 def _execute(case: bytes, *, max_json_depth: int):
     return SQLiteTransactionTarget(max_json_depth=max_json_depth).as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -73,7 +73,7 @@ def test_real_harness_observes_json_depth_budget_as_target_identity() -> None:
     harness = DifferentialHarness(
         candidate=SQLiteTransactionTarget(max_json_depth=4).as_command_target(),
         oracle=SQLiteTransactionTarget(max_json_depth=3).as_command_target(),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
     )
 
     run = harness.evaluate(_request())

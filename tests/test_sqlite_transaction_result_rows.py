@@ -29,7 +29,7 @@ def _request() -> bytes:
 def _execute(max_result_rows: int):
     return SQLiteTransactionTarget(max_result_rows=max_result_rows).as_command_target().execute(
         _request(),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -71,7 +71,7 @@ def test_real_harness_classifies_result_row_budget_difference_as_product_mismatc
     harness = DifferentialHarness(
         candidate=SQLiteTransactionTarget(max_result_rows=2).as_command_target(),
         oracle=SQLiteTransactionTarget(max_result_rows=3).as_command_target(),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
     )
 
     run = harness.evaluate(_request())

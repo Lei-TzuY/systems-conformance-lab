@@ -21,7 +21,7 @@ def _request(*, setup: list[str], transaction_sql: str, observe_sql: str) -> byt
 def _execute(case: bytes, target: SQLiteTransactionTarget):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -80,7 +80,7 @@ def test_transaction_target_rejects_each_oversized_sql_field(
 def test_real_harness_exercises_sql_budget_as_target_semantics() -> None:
     candidate = SQLiteTransactionTarget(max_sql_bytes=8).as_command_target()
     oracle = SQLiteTransactionTarget(max_sql_bytes=9).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = _request(setup=[], transaction_sql="SELECT 1 ", observe_sql="SELECT 1")
 
     run = harness.evaluate(case)

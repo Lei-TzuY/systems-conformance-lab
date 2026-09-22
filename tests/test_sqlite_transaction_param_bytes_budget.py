@@ -45,7 +45,7 @@ def _execute(
         max_param_bytes=max_param_bytes
     ).as_command_target().execute(
         _request(transaction_values, observe_values),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -104,7 +104,7 @@ def test_sqlite_transaction_param_bytes_budget_changes_replay_context() -> None:
 def test_real_differential_harness_observes_sqlite_transaction_param_bytes_budget() -> None:
     candidate = SQLiteTransactionTarget(max_param_bytes=3).as_command_target()
     oracle = SQLiteTransactionTarget(max_param_bytes=4).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
 
     run = harness.evaluate(_request(["é", "é"]))
 

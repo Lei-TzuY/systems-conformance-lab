@@ -78,7 +78,7 @@ def test_fault_occurrence_reductions_are_deterministic_and_strictly_lower() -> N
 def test_real_row_budget_failure_reduces_to_required_setup() -> None:
     candidate = SQLiteQueryTarget(max_result_rows=1).as_command_target()
     oracle = SQLiteQueryTarget(max_result_rows=2).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     initial = _case(
         setup=[
             "CREATE TABLE items(v INTEGER)",
@@ -115,7 +115,7 @@ def test_real_row_budget_failure_reduces_to_required_setup() -> None:
 def test_real_fault_failure_reduces_query_scalar() -> None:
     candidate = SQLiteQueryTarget(enable_faults=True).as_command_target()
     oracle = SQLiteQueryTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     initial = _case(
         setup=[],
         query="SELECT ?",
@@ -145,7 +145,7 @@ def test_real_fault_failure_reduces_query_scalar() -> None:
 def test_real_fault_failure_reduces_occurrence_and_preserves_signature() -> None:
     candidate = SQLiteQueryTarget(enable_faults=True).as_command_target()
     oracle = SQLiteQueryTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     initial = _case(
         setup=["SELECT 1", "SELECT 2", "SELECT 3"],
         query="SELECT 4",

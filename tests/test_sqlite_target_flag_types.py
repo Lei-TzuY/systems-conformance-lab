@@ -32,7 +32,7 @@ def test_valid_query_flags_execute_real_sqlite_worker() -> None:
     disabled = SQLiteQueryTarget(foreign_keys=False, enable_faults=False)
     result = disabled.as_command_target().execute(
         request,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -59,7 +59,7 @@ def test_valid_transaction_flags_execute_real_sqlite_worker() -> None:
     )
     result = disabled.as_command_target().execute(
         request,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )

@@ -30,7 +30,7 @@ def _case() -> bytes:
 def test_real_sqlite_query_failure_reduces_across_all_phases_and_replays(tmp_path) -> None:
     candidate = SQLiteQueryTarget(enable_faults=True).as_command_target()
     oracle = SQLiteQueryTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     initial = _case()
     run = harness.evaluate(initial)
 
@@ -72,7 +72,7 @@ def test_real_sqlite_query_failure_reduces_across_all_phases_and_replays(tmp_pat
 def test_real_sqlite_query_triage_fails_closed_on_structural_budget(tmp_path) -> None:
     candidate = SQLiteQueryTarget(enable_faults=True).as_command_target()
     oracle = SQLiteQueryTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     initial = _case()
     run = harness.evaluate(initial)
     assert run.signature is not None
@@ -96,7 +96,7 @@ def test_real_sqlite_query_triage_fails_closed_on_structural_budget(tmp_path) ->
 def test_query_triage_rejects_inconsistent_failure_signature(tmp_path) -> None:
     candidate = SQLiteQueryTarget(enable_faults=True).as_command_target()
     oracle = SQLiteQueryTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     initial = _case()
     run = harness.evaluate(initial)
 

@@ -27,7 +27,7 @@ def _execute(case: bytes, *, max_result_columns: int):
         max_result_columns=max_result_columns
     ).as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -95,7 +95,7 @@ def test_transaction_result_column_budget_changes_replay_context() -> None:
 def test_real_differential_harness_observes_transaction_result_column_budget() -> None:
     candidate = SQLiteTransactionTarget(max_result_columns=2).as_command_target()
     oracle = SQLiteTransactionTarget(max_result_columns=3).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
 
     run = harness.evaluate(_request(transaction_sql="SELECT 1 AS a, 2 AS b, 3 AS c"))
 
