@@ -163,3 +163,18 @@ reader-contention difference, the campaign-retained witness is minimized, and th
 resulting context-bound repro replays with the same stable failure identity. Campaign,
 mutation-construction, and reducer work remain independently bounded; no-failure
 campaigns fail closed without publishing evidence.
+
+
+### Two-connection portable archive evidence checkpoint
+
+The two-connection adapter now carries discovered failure evidence across the portable
+archive boundary. A real feedback-guided DELETE-vs-WAL mismatch is minimized, exported
+through the validated deterministic archive format, imported into a private snapshot for
+replay, checked against the original replay context and stable failure signature, and
+returned with the SHA-256 of the exact archive bytes that were executed.
+
+A copied archive can be replayed at a different path while pinning that digest, proving
+that the evidence identity survives transport independently of path naming. Existing
+archive validation and replay primitives remain authoritative; this checkpoint adds only
+target-specific composition above them. No-failure discovery and pre-existing archive
+destinations fail closed before publishing new transport evidence.
