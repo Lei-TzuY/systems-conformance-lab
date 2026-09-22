@@ -102,8 +102,10 @@ def test_parameter_reductions_cover_step_params_and_are_strictly_simpler() -> No
     [
         (b'{"setup":[],"steps":[]}', "steps must be a non-empty list"),
         (
-            b'{"setup":[],"steps":[{"connection":"a","op":"query","sql":"SELECT 1"}],'
-            b'"steps":[{"connection":"b","op":"query","sql":"SELECT 2"}]}',
+            (
+                b'{"setup":[],"steps":[{"connection":"a","op":"query","sql":"SELECT 1"}],'
+                b'"steps":[{"connection":"b","op":"query","sql":"SELECT 2"}]}'
+            ),
             "duplicate JSON object field: steps",
         ),
     ],
