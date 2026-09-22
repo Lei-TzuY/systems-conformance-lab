@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 import errno
 import os
+import stat
 import sys
 from pathlib import Path
 
@@ -11,6 +12,14 @@ _RENAME_NOREPLACE = 1
 _RENAME_EXCL = 0x00000004
 _ERROR_ALREADY_EXISTS = 183
 _ERROR_FILE_EXISTS = 80
+
+DirectoryIdentity = tuple[int, int]
+
+
+def directory_identity(metadata: os.stat_result) -> DirectoryIdentity:
+    """Return the stable filesystem identity used to bind directory publication."""
+
+    return metadata.st_dev, metadata.st_ino
 
 
 def _raise_publication_error(error_number: int, destination: Path) -> None:
@@ -23,8 +32,18 @@ def _raise_publication_error(error_number: int, destination: Path) -> None:
     raise OSError(error_number, os.strerror(error_number), str(destination))
 
 
-def publish_directory_no_replace(staging: Path, destination: Path) -> None:
+def publish_directory_no_replace(
+    staging: Path,
+    destination: Path,
+    *,
+    expected_identity: DirectoryIdentity | None = None,
+) -> None:
     """Atomically publish one directory without replacing an existing entry.
+
+    When ``expected_identity`` is supplied, the source pathname must still name
+    the exact directory inode validated by the caller immediately before the
+    platform no-replace rename is attempted. This prevents a stale staging
+    pathname from silently redirecting publication to a replacement object.
 
     The primitive is deliberately fail-closed on platforms where this project
     does not have a verified atomic no-replace directory rename operation.
@@ -32,6 +51,14 @@ def publish_directory_no_replace(staging: Path, destination: Path) -> None:
 
     staging = Path(staging)
     destination = Path(destination)
+
+    if expected_identity is not None:
+        try:
+            current = staging.stat(follow_symlinks=False)
+        except OSError as exc:
+            raise ValueError("staging directory changed before publication") from exc
+        if not stat.S_ISDIR(current.st_mode) or directory_identity(current) != expected_identity:
+            raise ValueError("staging directory changed before publication")
 
     if sys.platform.startswith("linux"):
         libc = ctypes.CDLL(None, use_errno=True)
