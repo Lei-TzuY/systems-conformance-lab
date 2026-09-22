@@ -101,6 +101,7 @@ from .sqlite_two_connection_triage import (
     reduce_sqlite_two_connection_failure_to_repro,
 )
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
+from .utf8_stream_adapter import UTF8DecodeTarget
 from .write_fault import FaultingBinaryWriter
 
 __all__ = [
@@ -150,6 +151,7 @@ __all__ = [
     "SQLiteTwoConnectionScenarioMutations",
     "SQLiteTwoConnectionScenarioTarget",
     "StreamCapture",
+    "UTF8DecodeTarget",
     "compare_results",
     "discover_sqlite_two_connection_failure_to_archive",
     "discover_sqlite_two_connection_failure_to_repro",
