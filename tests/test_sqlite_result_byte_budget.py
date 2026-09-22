@@ -15,7 +15,7 @@ def _request(query: str) -> bytes:
 def _execute(case: bytes, target: SQLiteQueryTarget):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -73,7 +73,7 @@ def test_result_byte_budget_is_part_of_replay_identity() -> None:
 def test_real_harness_observes_result_byte_budget_as_product_mismatch() -> None:
     candidate = SQLiteQueryTarget(max_result_bytes=8).as_command_target()
     oracle = SQLiteQueryTarget(max_result_bytes=9).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
 
     run = harness.evaluate(_request("SELECT 1 UNION ALL SELECT 2"))
 

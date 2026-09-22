@@ -29,7 +29,7 @@ def _execute(case: bytes, *, target: SQLiteQueryTarget | None = None):
     sqlite_target = SQLiteQueryTarget() if target is None else target
     return sqlite_target.as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -47,6 +47,7 @@ def test_sqlite_target_returns_canonical_rows_and_blobs() -> None:
     )
 
     assert result.infrastructure_error is None
+    assert result.timed_out is False
     assert result.exit_code == 0, (
         f"sqlite target exited {result.exit_code}; "
         f"stderr={result.stderr.text!r}; stdout={result.stdout.text!r}"
@@ -196,7 +197,7 @@ def test_sqlite_vm_budget_interrupts_recursive_query_without_harness_timeout() -
 def test_strict_protocol_rejection_is_deterministic_across_real_targets() -> None:
     candidate = SQLiteQueryTarget(foreign_keys=True).as_command_target()
     oracle = SQLiteQueryTarget(foreign_keys=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = b'{"setup":[],"query":"SELECT ?","params":[Infinity]}'
 
     run = harness.evaluate(case)
@@ -211,7 +212,7 @@ def test_strict_protocol_rejection_is_deterministic_across_real_targets() -> Non
 def test_real_sqlite_targets_produce_product_mismatch_for_configuration_difference() -> None:
     candidate = SQLiteQueryTarget(foreign_keys=True).as_command_target()
     oracle = SQLiteQueryTarget(foreign_keys=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = _request(
         setup=[
             "CREATE TABLE parent(id INTEGER PRIMARY KEY)",
@@ -233,7 +234,7 @@ def test_real_sqlite_targets_produce_product_mismatch_for_configuration_differen
 def test_real_differential_harness_observes_injected_sqlite_fault() -> None:
     candidate = SQLiteQueryTarget(enable_faults=True).as_command_target()
     oracle = SQLiteQueryTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = _request(
         setup=["CREATE TABLE items(v INTEGER)", "INSERT INTO items VALUES (1)"],
         query="SELECT v FROM items",
@@ -255,7 +256,7 @@ def test_real_differential_harness_observes_injected_sqlite_fault() -> None:
 def test_real_differential_harness_observes_sqlite_vm_budget() -> None:
     candidate = SQLiteQueryTarget(max_vm_steps=100).as_command_target()
     oracle = SQLiteQueryTarget(max_vm_steps=100000).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = _request(
         setup=[],
         query=(

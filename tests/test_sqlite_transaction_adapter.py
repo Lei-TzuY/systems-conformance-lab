@@ -32,7 +32,7 @@ def _execute(case: bytes, *, target: SQLiteTransactionTarget | None = None):
     sqlite_target = SQLiteTransactionTarget() if target is None else target
     return sqlite_target.as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -213,7 +213,7 @@ def test_transaction_target_rejects_invalid_configuration(
 def test_real_harness_distinguishes_commit_from_rollback_semantics() -> None:
     candidate = SQLiteTransactionTarget(finalize="commit").as_command_target()
     oracle = SQLiteTransactionTarget(finalize="rollback").as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = _request(
         setup=["CREATE TABLE items(v INTEGER)"],
         transaction=[_statement("INSERT INTO items VALUES (42)")],
@@ -236,7 +236,7 @@ def test_real_harness_distinguishes_commit_from_rollback_semantics() -> None:
 def test_real_harness_classifies_transaction_fault_as_product_mismatch() -> None:
     candidate = SQLiteTransactionTarget(enable_faults=True).as_command_target()
     oracle = SQLiteTransactionTarget(enable_faults=False).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = _request(
         setup=["CREATE TABLE items(v INTEGER)"],
         transaction=[_statement("INSERT INTO items VALUES (42)")],

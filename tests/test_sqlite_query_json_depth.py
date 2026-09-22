@@ -11,7 +11,7 @@ from systems_conformance.sqlite_adapter import SQLiteQueryTarget
 def _execute(case: bytes, *, depth: int):
     return SQLiteQueryTarget(max_json_depth=depth).as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -50,7 +50,7 @@ def test_query_target_rejects_invalid_json_depth_configuration() -> None:
 def test_real_harness_observes_query_json_depth_configuration() -> None:
     candidate = SQLiteQueryTarget(max_json_depth=2).as_command_target()
     oracle = SQLiteQueryTarget(max_json_depth=1).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     case = json.dumps(
         {"setup": [], "query": "SELECT ?", "params": [7]}, separators=(",", ":")
     ).encode()

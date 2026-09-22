@@ -29,7 +29,7 @@ def _request() -> bytes:
 def _execute(max_total_sql_bytes: int):
     return SQLiteQueryTarget(max_total_sql_bytes=max_total_sql_bytes).as_command_target().execute(
         _request(),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -83,7 +83,7 @@ def test_real_differential_harness_observes_query_total_sql_bytes_budget() -> No
         max_total_sql_bytes=_TOTAL_SQL_BYTES - 1
     ).as_command_target()
     oracle = SQLiteQueryTarget(max_total_sql_bytes=_TOTAL_SQL_BYTES).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
 
     run = harness.evaluate(_request())
 

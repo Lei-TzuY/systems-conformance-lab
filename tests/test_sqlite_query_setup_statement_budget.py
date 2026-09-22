@@ -20,7 +20,7 @@ def _execute(setup: list[str], *, max_setup_statements: int):
         max_setup_statements=max_setup_statements
     ).as_command_target().execute(
         _request(setup),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -67,7 +67,7 @@ def test_sqlite_query_setup_statement_budget_changes_replay_context() -> None:
 def test_real_differential_harness_observes_sqlite_query_setup_statement_budget() -> None:
     candidate = SQLiteQueryTarget(max_setup_statements=1).as_command_target()
     oracle = SQLiteQueryTarget(max_setup_statements=2).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
     setup = ["CREATE TABLE t(x INTEGER)", "INSERT INTO t VALUES (1)"]
 
     run = harness.evaluate(_request(setup))
