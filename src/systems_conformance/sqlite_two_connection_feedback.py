@@ -8,7 +8,6 @@ from .comparator import ComparisonResult
 from .harness import DifferentialHarness, DifferentialRun
 from .model import ExecutionResult
 
-
 _KNOWN_OPS = {
     "begin",
     "try_begin",

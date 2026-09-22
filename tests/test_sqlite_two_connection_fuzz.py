@@ -78,15 +78,19 @@ def test_scenario_mutations_validate_shape_and_bounds() -> None:
     with pytest.raises(ValueError, match="mode"):
         SQLiteTwoConnectionScenarioMutations(
             [
-                b'{"setup":[],"steps":['
-                b'{"connection":"a","op":"begin","mode":"optimistic"}]}'
+                (
+                    b'{"setup":[],"steps":['
+                    b'{"connection":"a","op":"begin","mode":"optimistic"}]}'
+                )
             ]
         )
     with pytest.raises(TypeError, match="JSON scalar"):
         SQLiteTwoConnectionScenarioMutations(
             [
-                b'{"setup":[],"steps":['
-                b'{"connection":"a","op":"query","sql":"SELECT ?","params":[[1]]}]}'
+                (
+                    b'{"setup":[],"steps":['
+                    b'{"connection":"a","op":"query","sql":"SELECT ?","params":[[1]]}]}'
+                )
             ]
         )
 

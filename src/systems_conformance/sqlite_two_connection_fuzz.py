@@ -5,7 +5,6 @@ import math
 from collections.abc import Sequence
 from typing import Any
 
-
 _MODES = ("deferred", "immediate", "exclusive")
 _SQL_OPS = {"execute", "query", "try_execute", "try_query"}
 _BEGIN_OPS = {"begin", "try_begin"}
