@@ -1,9 +1,9 @@
 from __future__ import annotations
 
+import dataclasses
 import json
-from dataclasses import dataclass
-from shutil import which
-from typing import Literal
+import shutil
+import typing
 
 from .harness import CommandTarget
 
@@ -74,7 +74,7 @@ def _node_script(*, mode: str, errors: str, chunk_size: int) -> str:
     )
 
 
-@dataclass(frozen=True, slots=True)
+@dataclasses.dataclass(frozen=True, slots=True)
 class UTF8NodeDecodeTarget:
     """Node/WHATWG TextDecoder target for cross-runtime UTF-8 conformance.
 
@@ -87,8 +87,8 @@ class UTF8NodeDecodeTarget:
     Python's plain utf-8 decoder rather than utf-8-sig behavior.
     """
 
-    mode: Literal["oneshot", "incremental"] = "incremental"
-    errors: Literal["strict", "replace"] = "strict"
+    mode: typing.Literal["oneshot", "incremental"] = "incremental"
+    errors: typing.Literal["strict", "replace"] = "strict"
     chunk_size: int = 1
     node_executable: str = "node"
 
@@ -105,7 +105,7 @@ class UTF8NodeDecodeTarget:
             raise ValueError("chunk_size must be a positive integer")
         if not isinstance(self.node_executable, str) or not self.node_executable:
             raise ValueError("node_executable must be a non-empty string")
-        if which(self.node_executable) is None:
+        if shutil.which(self.node_executable) is None:
             raise RuntimeError(
                 f"Node runtime is required for UTF8NodeDecodeTarget: {self.node_executable}"
             )
