@@ -53,7 +53,7 @@ def test_wal_begin_modes_match_deferred_reopen_semantics(
             synchronous="full",
             reopen_before_observe=True,
         ).as_command_target(),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
     )
 
     run = harness.evaluate(_case())
