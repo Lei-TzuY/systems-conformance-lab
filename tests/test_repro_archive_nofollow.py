@@ -8,8 +8,8 @@ from systems_conformance import (
     DifferentialHarness,
     export_repro_archive,
     import_repro_archive,
+    repro_archive as repro_archive_module,
 )
-from systems_conformance import repro_archive as repro_archive_module
 
 
 pytestmark = pytest.mark.skipif(
