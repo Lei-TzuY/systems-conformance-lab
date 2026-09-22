@@ -48,7 +48,6 @@ def test_setup_deletions_are_deterministic_and_may_reduce_to_empty() -> None:
     case = _case(
         setup=[
             "CREATE TABLE items(v INTEGER)",
-            "INSERT INTO items VALUES (1)",
             "CREATE TABLE noise(v INTEGER)",
         ],
         steps=[{"connection": "a", "op": "query", "sql": "SELECT v FROM items"}],
@@ -59,7 +58,7 @@ def test_setup_deletions_are_deterministic_and_may_reduce_to_empty() -> None:
 
     assert first == second
     assert first
-    assert all(sqlite_two_connection_setup_count(candidate) < 3 for candidate in first)
+    assert all(sqlite_two_connection_setup_count(candidate) < 2 for candidate in first)
     assert any(json.loads(candidate)["setup"] == [] for candidate in first)
     assert all(len(json.loads(candidate)["steps"]) == 1 for candidate in first)
 
