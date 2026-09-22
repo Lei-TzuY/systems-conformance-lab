@@ -42,7 +42,7 @@ def _payload(text: str) -> dict[str, object]:
     return json.loads(text)
 
 
-def test_node_22_runtime_is_available_for_cross_runtime_suite() -> None:
+def test_node_runtime_is_available_for_cross_runtime_suite() -> None:
     executable = shutil.which("node")
 
     assert executable is not None

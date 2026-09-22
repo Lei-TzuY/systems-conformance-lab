@@ -194,3 +194,21 @@ process execution, comparison, and fuzz scheduling layers are reusable without a
 request protocol or SQLite lifecycle. The checkpoint intentionally stops short of
 cross-runtime Unicode claims; broader codec interoperability is a later architectural
 phase.
+
+
+### UTF-8 cross-runtime interoperability checkpoint
+
+The second conformance domain now crosses a real runtime boundary. A Node 22 WHATWG
+TextDecoder target emits the same bounded semantic JSON surface as the Python UTF-8
+target, while the generic runner, differential harness, comparator, and fuzz scheduler
+remain unchanged.
+
+Executable evidence covers one-shot and incremental decoding, multibyte chunk
+boundaries, BOM preservation, strict rejection, selected replacement semantics, and a
+finite deterministic strict-mode mutation schedule. CI provisions Node explicitly on
+Ubuntu, Windows, and macOS for both supported Python versions, so the interoperability
+claim is exercised rather than skipped.
+
+The cross-runtime claim is deliberately limited to shared UTF-8 strict/replace
+semantics. Python's ignore mode and broader Unicode/ICU services are not generalized by
+this checkpoint.

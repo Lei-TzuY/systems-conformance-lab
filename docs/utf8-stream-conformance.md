@@ -39,3 +39,27 @@ paths are provided by Python's standard library. The architectural result is nar
 the shared runner, harness, comparator, replay identity, and deterministic fuzz
 interfaces now execute a non-SQLite raw-byte streaming domain without absorbing codec
 semantics into the generic core.
+
+
+## Cross-runtime interoperability
+
+The next executable layer compares the existing Python decoder with Node 22's WHATWG
+TextDecoder through the same DifferentialHarness. Node is provisioned explicitly in CI;
+the adapter fails closed at construction when its runtime executable is unavailable.
+
+The Node target supports the shared strict and replace policies. Its fatal option maps
+strict decode rejection to the same canonical JSON error used by the Python worker.
+ignoreBOM is set to true so a leading UTF-8 BOM remains U+FEFF, matching Python's plain
+utf-8 decoder. The Python-only ignore policy is intentionally outside the cross-runtime
+claim.
+
+The cross-runtime suite executes both one-shot and incremental modes across multibyte
+chunk boundaries, BOM input, invalid and truncated byte sequences, replacement cases,
+and a finite deterministic strict-mode byte mutation schedule. Candidate and oracle are
+separate Node and Python child processes; a passing result therefore exercises process
+execution, canonical output, comparison, and fuzz scheduling across two language
+runtimes rather than two APIs in one runtime.
+
+This phase does not claim that every implementation-specific replacement policy or
+Unicode service is identical. Unicode normalization, locale behavior, grapheme
+segmentation, UTF-16/UTF-32, and broad ICU interoperability remain separate surfaces.
