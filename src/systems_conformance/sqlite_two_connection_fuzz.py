@@ -12,6 +12,18 @@ _SIMPLE_OPS = {"commit", "rollback"}
 _ALL_OPS = _SQL_OPS | _BEGIN_OPS | _SIMPLE_OPS
 
 
+class SQLiteTwoConnectionMutationBudgetExhausted(RuntimeError):
+    """Raised before mutation construction exceeds its structural work ceiling."""
+
+    def __init__(self, *, candidate_visits: int, max_candidate_visits: int) -> None:
+        self.candidate_visits = candidate_visits
+        self.max_candidate_visits = max_candidate_visits
+        super().__init__(
+            "two-connection mutation candidate budget exhausted "
+            f"after {candidate_visits} visits (limit {max_candidate_visits})"
+        )
+
+
 def _reject_json_constant(value: str) -> Any:
     raise ValueError(f"non-finite JSON constant is not supported: {value}")
 
@@ -153,22 +165,52 @@ class SQLiteTwoConnectionScenarioMutations:
     steps. BEGIN/TRY_BEGIN modes probe the other supported lock-acquisition policies;
     SQL-operation parameter arrays receive bounded scalar replacements. SQL text,
     setup statements, step ordering, connection assignment, and operation kind remain
-    unchanged. Duplicate and oversized candidates are skipped.
+    unchanged. Seed count, candidate construction work, and individual case bytes are
+    bounded independently. Candidate-budget exhaustion fails closed before the next
+    full JSON candidate is constructed; duplicate and oversized candidates still count
+    as structural work rather than bypassing the ceiling.
     """
 
-    __slots__ = ("_cases",)
+    __slots__ = ("_candidate_visits", "_cases")
 
-    def __init__(self, seeds: Sequence[bytes], *, max_case_bytes: int = 65536) -> None:
+    def __init__(
+        self,
+        seeds: Sequence[bytes],
+        *,
+        max_case_bytes: int = 65536,
+        max_seeds: int = 64,
+        max_candidate_visits: int = 1024,
+    ) -> None:
         if isinstance(max_case_bytes, bool) or not isinstance(max_case_bytes, int):
             raise TypeError("max_case_bytes must be an integer")
         if max_case_bytes <= 0:
             raise ValueError("max_case_bytes must be positive")
+        if isinstance(max_seeds, bool) or not isinstance(max_seeds, int):
+            raise TypeError("max_seeds must be an integer")
+        if max_seeds <= 0:
+            raise ValueError("max_seeds must be positive")
+        if isinstance(max_candidate_visits, bool) or not isinstance(max_candidate_visits, int):
+            raise TypeError("max_candidate_visits must be an integer")
+        if max_candidate_visits <= 0:
+            raise ValueError("max_candidate_visits must be positive")
         if not seeds:
             raise ValueError("seeds must be non-empty")
+        if len(seeds) > max_seeds:
+            raise ValueError(f"seeds exceeds max_seeds: {max_seeds}")
 
         cases: list[bytes] = []
         seen: set[bytes] = set()
         decoded: list[dict[str, Any]] = []
+        candidate_visits = 0
+
+        def claim_candidate_visit() -> None:
+            nonlocal candidate_visits
+            if candidate_visits >= max_candidate_visits:
+                raise SQLiteTwoConnectionMutationBudgetExhausted(
+                    candidate_visits=candidate_visits,
+                    max_candidate_visits=max_candidate_visits,
+                )
+            candidate_visits += 1
         for seed in seeds:
             if not isinstance(seed, bytes):
                 raise TypeError("seeds must contain bytes")
@@ -193,6 +235,7 @@ class SQLiteTwoConnectionScenarioMutations:
                 for replacement in _MODES:
                     if replacement == mode:
                         continue
+                    claim_candidate_visit()
                     candidate = dict(payload)
                     candidate_steps = [dict(item) for item in steps]
                     candidate_step = dict(step)
@@ -212,6 +255,7 @@ class SQLiteTwoConnectionScenarioMutations:
                 params = _validate_params(step.get("params"), step_index=step_index)
                 for param_index, value in enumerate(params):
                     for replacement in _mutation_values(value):
+                        claim_candidate_visit()
                         candidate = dict(payload)
                         candidate_steps = [dict(item) for item in steps]
                         candidate_step = dict(step)
@@ -226,7 +270,13 @@ class SQLiteTwoConnectionScenarioMutations:
                         cases.append(encoded)
                         seen.add(encoded)
 
+        self._candidate_visits = candidate_visits
         self._cases = tuple(cases)
+
+    @property
+    def candidate_visits(self) -> int:
+        """Return the number of mutation candidates constructed for this schedule."""
+        return self._candidate_visits
 
     @property
     def case_count(self) -> int:
