@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import pytest
 
@@ -124,6 +125,124 @@ def test_differential_harness_compares_writer_exclusion_across_journal_modes() -
     assert run.oracle.exit_code == 0
     assert run.comparison.classification == "match"
     assert run.signature is None
+
+
+def test_try_execute_records_extended_busy_snapshot_without_losing_reader_state() -> None:
+    case = _case(
+        setup=[
+            "CREATE TABLE items(v INTEGER NOT NULL)",
+            "INSERT INTO items VALUES (0)",
+        ],
+        steps=[
+            {"connection": "a", "op": "begin", "mode": "deferred"},
+            {"connection": "a", "op": "query", "sql": "SELECT v FROM items"},
+            {"connection": "b", "op": "begin", "mode": "immediate"},
+            {"connection": "b", "op": "execute", "sql": "UPDATE items SET v = 1"},
+            {"connection": "b", "op": "commit"},
+            {"connection": "a", "op": "try_execute", "sql": "UPDATE items SET v = 2"},
+            {"connection": "a", "op": "query", "sql": "SELECT v FROM items"},
+            {"connection": "a", "op": "rollback"},
+            {"connection": "a", "op": "query", "sql": "SELECT v FROM items"},
+        ],
+    )
+
+    result = _execute(SQLiteTwoConnectionScenarioTarget(journal_mode="wal"), case)
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0, result.stderr.text
+    steps = json.loads(result.stdout.text)["steps"]
+    assert steps[5] == {
+        "connection": "a",
+        "op": "try_execute",
+        "ok": False,
+        "error": "SQLITE_BUSY_SNAPSHOT",
+        "error_code": sqlite3.SQLITE_BUSY_SNAPSHOT,
+    }
+    assert steps[6] == {
+        "connection": "a",
+        "op": "query",
+        "columns": ["v"],
+        "rows": [[0]],
+    }
+    assert steps[8] == {
+        "connection": "a",
+        "op": "query",
+        "columns": ["v"],
+        "rows": [[1]],
+    }
+
+
+@pytest.mark.parametrize("journal_mode", ["delete", "wal"])
+def test_try_query_expresses_reader_contention_without_fixed_worker(
+    journal_mode: str,
+) -> None:
+    case = _case(
+        setup=[
+            "CREATE TABLE items(v INTEGER NOT NULL)",
+            "INSERT INTO items VALUES (0)",
+        ],
+        steps=[
+            {"connection": "a", "op": "begin", "mode": "exclusive"},
+            {"connection": "a", "op": "execute", "sql": "UPDATE items SET v = 1"},
+            {"connection": "b", "op": "try_query", "sql": "SELECT v FROM items"},
+            {"connection": "a", "op": "commit"},
+            {"connection": "b", "op": "query", "sql": "SELECT v FROM items"},
+        ],
+    )
+
+    result = _execute(
+        SQLiteTwoConnectionScenarioTarget(journal_mode=journal_mode),  # type: ignore[arg-type]
+        case,
+    )
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0, result.stderr.text
+    steps = json.loads(result.stdout.text)["steps"]
+    if journal_mode == "delete":
+        assert steps[2] == {
+            "connection": "b",
+            "op": "try_query",
+            "ok": False,
+            "error": "SQLITE_BUSY",
+            "error_code": sqlite3.SQLITE_BUSY,
+        }
+    else:
+        assert steps[2] == {
+            "connection": "b",
+            "op": "try_query",
+            "ok": True,
+            "columns": ["v"],
+            "rows": [[0]],
+        }
+    assert steps[4] == {
+        "connection": "b",
+        "op": "query",
+        "columns": ["v"],
+        "rows": [[1]],
+    }
+
+
+def test_try_execute_success_is_explicit_in_transcript() -> None:
+    case = _case(
+        setup=["CREATE TABLE items(v INTEGER NOT NULL)"],
+        steps=[
+            {
+                "connection": "a",
+                "op": "try_execute",
+                "sql": "INSERT INTO items VALUES (7)",
+            },
+            {"connection": "a", "op": "query", "sql": "SELECT v FROM items"},
+        ],
+    )
+
+    result = _execute(SQLiteTwoConnectionScenarioTarget(), case)
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 0, result.stderr.text
+    assert json.loads(result.stdout.text)["steps"] == [
+        {"connection": "a", "op": "try_execute", "ok": True},
+        {"connection": "a", "op": "query", "columns": ["v"], "rows": [[7]]},
+    ]
 
 
 def test_transaction_control_in_input_sql_is_rejected_before_execution() -> None:
