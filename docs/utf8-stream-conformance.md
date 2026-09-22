@@ -63,3 +63,24 @@ runtimes rather than two APIs in one runtime.
 This phase does not claim that every implementation-specific replacement policy or
 Unicode service is identical. Unicode normalization, locale behavior, grapheme
 segmentation, UTF-16/UTF-32, and broad ICU interoperability remain separate surfaces.
+
+
+## Irregular transport segmentation
+
+The streaming boundary now separates codec semantics from a fixed transport stride.
+Both Python and Node targets accept an optional bounded `chunk_pattern`: a non-empty
+tuple of at most 64 positive widths that repeats until the raw byte input is exhausted.
+When no pattern is supplied, the original fixed `chunk_size` argv and behavior are
+preserved.
+
+The pattern is target configuration rather than case data. It therefore participates in
+process argv/replay identity while stdin remains the exact byte sequence under test. The
+integration suite exercises irregular boundaries through valid multibyte input, BOM
+input, malformed continuation sequences, truncated final sequences, strict rejection,
+and replacement semantics. Node and Python consume the same cyclic segmentation policy
+in separate child processes.
+
+This checkpoint is intentionally about streaming state-machine interoperability, not a
+new fuzz grammar or Unicode feature claim. It does not add zero-length chunks, arbitrary
+flush injection, locale services, normalization, grapheme segmentation, or additional
+encodings.

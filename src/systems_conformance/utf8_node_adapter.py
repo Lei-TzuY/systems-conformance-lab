@@ -5,6 +5,7 @@ from json import dumps
 from shutil import which
 from typing import Literal
 
+from ._utf8_chunking import validate_chunk_pattern
 from .harness import CommandTarget
 
 _NODE_SCRIPT = r"""
@@ -64,12 +65,87 @@ try {
 }
 """.strip()
 
+_NODE_PATTERN_SCRIPT = r"""
+const fs = require("node:fs");
+const { TextDecoder } = require("node:util");
 
-def _node_script(*, mode: str, errors: str, chunk_size: int) -> str:
+const raw = fs.readFileSync(0);
+const MODE = __MODE__;
+const ERRORS = __ERRORS__;
+const CHUNK_PATTERN = __CHUNK_PATTERN__;
+
+function asciiJsonString(value) {
+  const encoded = JSON.stringify(value);
+  let output = "";
+  for (let index = 0; index < encoded.length; index += 1) {
+    const codeUnit = encoded.charCodeAt(index);
+    if (codeUnit <= 0x7f) {
+      output += encoded[index];
+    } else {
+      output += "\\u" + codeUnit.toString(16).padStart(4, "0");
+    }
+  }
+  return output;
+}
+
+function emitSuccess(text) {
+  process.stdout.write('{"ok":true,"text":' + asciiJsonString(text) + '}\n');
+}
+
+function emitDecodeError() {
+  process.stdout.write('{"error":"unicode_decode_error","ok":false}\n');
+}
+
+try {
+  const decoder = new TextDecoder("utf-8", {
+    fatal: ERRORS === "strict",
+    ignoreBOM: true,
+  });
+
+  let text = "";
+  if (MODE === "oneshot") {
+    text = decoder.decode(raw);
+  } else {
+    let start = 0;
+    let patternIndex = 0;
+    while (start < raw.length) {
+      const width = CHUNK_PATTERN[patternIndex % CHUNK_PATTERN.length];
+      text += decoder.decode(raw.subarray(start, start + width), { stream: true });
+      start += width;
+      patternIndex += 1;
+    }
+    text += decoder.decode();
+  }
+  emitSuccess(text);
+} catch (error) {
+  if (ERRORS === "strict" && error instanceof TypeError) {
+    emitDecodeError();
+  } else {
+    process.stderr.write("utf8_node_runtime_error\n");
+    process.exitCode = 3;
+  }
+}
+""".strip()
+
+
+def _node_script(
+    *,
+    mode: str,
+    errors: str,
+    chunk_size: int,
+    chunk_pattern: tuple[int, ...] | None,
+) -> str:
+    if chunk_pattern is None:
+        return (
+            _NODE_SCRIPT.replace("__MODE__", dumps(mode))
+            .replace("__ERRORS__", dumps(errors))
+            .replace("__CHUNK_SIZE__", str(chunk_size))
+        )
+
     return (
-        _NODE_SCRIPT.replace("__MODE__", dumps(mode))
+        _NODE_PATTERN_SCRIPT.replace("__MODE__", dumps(mode))
         .replace("__ERRORS__", dumps(errors))
-        .replace("__CHUNK_SIZE__", str(chunk_size))
+        .replace("__CHUNK_PATTERN__", dumps(list(chunk_pattern)))
     )
 
 
@@ -82,6 +158,8 @@ class UTF8NodeDecodeTarget:
     UTF8DecodeTarget, allowing DifferentialHarness to compare Python and Node process
     semantics without teaching the generic substrate about Unicode.
 
+    Fixed chunk_size segmentation remains the default. An explicit bounded
+    chunk_pattern cycles through irregular widths until the input is exhausted.
     ignoreBOM is enabled intentionally so a leading UTF-8 BOM remains U+FEFF, matching
     Python's plain utf-8 decoder rather than utf-8-sig behavior.
     """
@@ -89,6 +167,7 @@ class UTF8NodeDecodeTarget:
     mode: Literal["oneshot", "incremental"] = "incremental"
     errors: Literal["strict", "replace"] = "strict"
     chunk_size: int = 1
+    chunk_pattern: tuple[int, ...] | None = None
     node_executable: str = "node"
 
     def __post_init__(self) -> None:
@@ -102,6 +181,7 @@ class UTF8NodeDecodeTarget:
             or self.chunk_size <= 0
         ):
             raise ValueError("chunk_size must be a positive integer")
+        validate_chunk_pattern(self.chunk_pattern)
         if not isinstance(self.node_executable, str) or not self.node_executable:
             raise ValueError("node_executable must be a non-empty string")
         if which(self.node_executable) is None:
@@ -111,6 +191,7 @@ class UTF8NodeDecodeTarget:
 
     def as_command_target(self) -> CommandTarget:
         """Return the immutable Node process target used by DifferentialHarness."""
+
         return CommandTarget(
             (
                 self.node_executable,
@@ -119,6 +200,7 @@ class UTF8NodeDecodeTarget:
                     mode=self.mode,
                     errors=self.errors,
                     chunk_size=self.chunk_size,
+                    chunk_pattern=self.chunk_pattern,
                 ),
             )
         )
