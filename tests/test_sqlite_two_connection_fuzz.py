@@ -6,6 +6,7 @@ import pytest
 
 from systems_conformance import (
     DifferentialHarness,
+    SQLiteTwoConnectionMutationBudgetExhausted,
     SQLiteTwoConnectionScenarioMutations,
     SQLiteTwoConnectionScenarioTarget,
     run_fuzz_campaign,
@@ -41,6 +42,7 @@ def test_scenario_mutations_are_finite_deterministic_and_preserve_protocol_shape
 
     assert corpus(0) == seed
     assert corpus.case_count == 9
+    assert corpus.candidate_visits == 8
     assert json.loads(corpus(1))["steps"][0]["mode"] == "deferred"
     assert json.loads(corpus(2))["steps"][0]["mode"] == "exclusive"
     assert [
@@ -93,6 +95,46 @@ def test_scenario_mutations_validate_shape_and_bounds() -> None:
                 )
             ]
         )
+
+
+def test_mutation_candidate_budget_fails_closed_before_next_candidate() -> None:
+    seed = _case(mode="immediate", threshold=7)
+
+    with pytest.raises(SQLiteTwoConnectionMutationBudgetExhausted) as exc_info:
+        SQLiteTwoConnectionScenarioMutations([seed], max_candidate_visits=1)
+
+    assert exc_info.value.candidate_visits == 1
+    assert exc_info.value.max_candidate_visits == 1
+
+
+def test_seed_budget_is_enforced_before_seed_decode() -> None:
+    seed = _case()
+
+    with pytest.raises(ValueError, match="seeds exceeds max_seeds: 1"):
+        SQLiteTwoConnectionScenarioMutations(
+            [seed, b"not-json"],
+            max_seeds=1,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("max_seeds", 0, "max_seeds must be positive"),
+        ("max_seeds", True, "max_seeds must be an integer"),
+        ("max_candidate_visits", 0, "max_candidate_visits must be positive"),
+        ("max_candidate_visits", True, "max_candidate_visits must be an integer"),
+    ],
+)
+def test_mutation_structural_budgets_validate_before_construction(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    kwargs = {field: value}
+
+    with pytest.raises((TypeError, ValueError), match=message):
+        SQLiteTwoConnectionScenarioMutations([_case()], **kwargs)  # type: ignore[arg-type]
 
 
 def test_real_sqlite_fuzz_discovers_reader_contention_via_begin_mode() -> None:
