@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
+import systems_conformance.repro_archive as repro_archive_module
 from systems_conformance import (
     CommandTarget,
     DifferentialHarness,
     export_repro_archive,
     import_repro_archive,
-    repro_archive as repro_archive_module,
 )
 
 
