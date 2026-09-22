@@ -113,3 +113,25 @@ transcripts differ. It starts from a deliberately noisy scenario, removes irrele
 steps and setup, simplifies the retained query parameter, writes the minimized repro,
 and replays it through the normal repro path. This is reduction of executable evidence,
 not a synthetic reducer-only fixture.
+
+
+## Deterministic scenario mutation and structural feedback
+
+The scenario adapter now has a bounded discovery layer above the executable protocol.
+`SQLiteTwoConnectionScenarioMutations` emits exact seeds first, then deterministically
+probes only two dimensions that keep the request structure valid: alternate
+`BEGIN`/`TRY_BEGIN` lock-acquisition modes and scalar parameters on SQL steps. It
+does not rewrite SQL, reorder steps, change connection assignment, invent operations,
+or introduce arbitrary scheduling.
+
+`sqlite_two_connection_feedback_features` consumes real differential transcripts and
+reports a bounded vocabulary: comparison class/mismatch fields, process outcome classes,
+step count, connection/op/mode classes, recognized try-operation busy outcomes, and
+query-result shape/value kinds. Raw SQL, column names, result values, SQLite numeric
+error codes, stderr text, timings, and output bytes are excluded from feedback.
+
+The executable discovery regression begins from an `IMMEDIATE` scenario that matches
+between DELETE and WAL. A deterministic mode mutation reaches `EXCLUSIVE`; DELETE then
+reports reader `SQLITE_BUSY` while WAL permits the reader, producing a real
+`product_mismatch`. The same path is exercised through the feedback-guided campaign,
+which retains the failure witness without changing the generic fuzz/feedback core.
