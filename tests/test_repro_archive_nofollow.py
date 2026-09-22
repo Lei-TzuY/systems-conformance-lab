@@ -3,6 +3,7 @@ import sys
 from pathlib import Path
 
 import pytest
+
 from systems_conformance import (
     CommandTarget,
     DifferentialHarness,
