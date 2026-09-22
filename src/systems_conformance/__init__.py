@@ -54,6 +54,7 @@ from .sqlite_query_triage import (
     reduce_sqlite_query_failure_to_repro,
 )
 from .sqlite_transaction_adapter import SQLiteTransactionTarget
+from .sqlite_two_connection_adapter import SQLiteTwoConnectionScenarioTarget
 from .sqlite_transaction_feedback import (
     SQLiteTransactionFeedbackEvaluator,
     sqlite_transaction_feedback_features,
@@ -113,6 +114,7 @@ __all__ = [
     "SQLiteTransactionParameterMutations",
     "SQLiteTransactionReducedFailureRepro",
     "SQLiteTransactionTarget",
+    "SQLiteTwoConnectionScenarioTarget",
     "StreamCapture",
     "compare_results",
     "enforce_repro_archive_retention",
