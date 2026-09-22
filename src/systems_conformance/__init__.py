@@ -54,7 +54,6 @@ from .sqlite_query_triage import (
     reduce_sqlite_query_failure_to_repro,
 )
 from .sqlite_transaction_adapter import SQLiteTransactionTarget
-from .sqlite_two_connection_adapter import SQLiteTwoConnectionScenarioTarget
 from .sqlite_transaction_feedback import (
     SQLiteTransactionFeedbackEvaluator,
     sqlite_transaction_feedback_features,
@@ -72,6 +71,7 @@ from .sqlite_transaction_triage import (
     SQLiteTransactionReducedFailureRepro,
     reduce_sqlite_transaction_failure_to_repro,
 )
+from .sqlite_two_connection_adapter import SQLiteTwoConnectionScenarioTarget
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
 from .write_fault import FaultingBinaryWriter
 
