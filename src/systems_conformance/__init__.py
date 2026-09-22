@@ -71,6 +71,7 @@ from .sqlite_transaction_triage import (
     SQLiteTransactionReducedFailureRepro,
     reduce_sqlite_transaction_failure_to_repro,
 )
+from .sqlite_two_connection_adapter import SQLiteTwoConnectionScenarioTarget
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
 from .write_fault import FaultingBinaryWriter
 
@@ -113,6 +114,7 @@ __all__ = [
     "SQLiteTransactionParameterMutations",
     "SQLiteTransactionReducedFailureRepro",
     "SQLiteTransactionTarget",
+    "SQLiteTwoConnectionScenarioTarget",
     "StreamCapture",
     "compare_results",
     "enforce_repro_archive_retention",

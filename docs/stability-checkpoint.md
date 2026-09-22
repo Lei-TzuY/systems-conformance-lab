@@ -78,3 +78,21 @@ After this checkpoint, routine work should follow a patrol model:
 - avoid speculative feature expansion when the existing substrate already expresses the required test.
 
 In short: keep the correctness core boring, deterministic, and reusable. Product complexity belongs above it.
+
+
+## Domain-adapter phase promotion
+
+The generic correctness substrate remains at the stable boundary above. The next active
+architecture phase is target-specific composition above that core, beginning with a
+bounded two-connection SQLite scenario executor.
+
+This promotion addresses an observed integration pattern: reader and writer semantics
+were increasingly represented by one fixed worker per scenario. The new adapter keeps
+the core harness unchanged while moving reusable connection ordering into a strict,
+budgeted data-plane program. Its first acceptance evidence covers WAL snapshot visibility
+and writer exclusion across DELETE and WAL journal modes with real process and database
+execution.
+
+Specialized crash, backup, checkpoint, and multi-process workers are not deprecated by
+this promotion. They remain authoritative where the two-connection program cannot
+express the same failure boundary without weakening evidence.
