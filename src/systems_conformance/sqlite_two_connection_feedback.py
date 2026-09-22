@@ -113,25 +113,33 @@ def _successful_transcript_features(side: str, execution: ExecutionResult) -> se
             continue
 
         connection = step.get("connection")
-        connection_kind = connection if connection in {"a", "b"} else "other"
+        connection_kind = (
+            connection if isinstance(connection, str) and connection in {"a", "b"} else "other"
+        )
         features.add(f"{side}:step:connection:{connection_kind}")
 
         op = step.get("op")
-        op_kind = op if op in _KNOWN_OPS else "other"
+        op_kind = op if isinstance(op, str) and op in _KNOWN_OPS else "other"
         features.add(f"{side}:step:op:{op_kind}")
 
-        if op in {"begin", "try_begin"}:
+        if op_kind in {"begin", "try_begin"}:
             mode = step.get("mode")
-            mode_kind = mode if mode in {"deferred", "immediate", "exclusive"} else "other"
+            mode_kind = (
+                mode
+                if isinstance(mode, str) and mode in {"deferred", "immediate", "exclusive"}
+                else "other"
+            )
             features.add(f"{side}:step:mode:{mode_kind}")
 
-        if op in {"try_begin", "try_execute", "try_query"}:
+        if op_kind in {"try_begin", "try_execute", "try_query"}:
             ok = step.get("ok")
             if isinstance(ok, bool):
                 features.add(f"{side}:try:ok:{int(ok)}")
                 if not ok:
                     error = step.get("error")
-                    error_kind = error if error in _BUSY_ERRORS else "other"
+                    error_kind = (
+                        error if isinstance(error, str) and error in _BUSY_ERRORS else "other"
+                    )
                     features.add(f"{side}:try:error:{error_kind}")
                     features.add(
                         f"{side}:try:error-code-present:{int(isinstance(step.get('error_code'), int))}"
@@ -139,7 +147,7 @@ def _successful_transcript_features(side: str, execution: ExecutionResult) -> se
             else:
                 features.add(f"{side}:try:invalid-ok")
 
-        if op == "query" or (op == "try_query" and step.get("ok") is True):
+        if op_kind == "query" or (op_kind == "try_query" and step.get("ok") is True):
             features.update(_result_features(f"{side}:result", step))
 
     return features
