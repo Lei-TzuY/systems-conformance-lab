@@ -27,7 +27,8 @@ class SQLiteTwoConnectionScenarioTarget:
     configures zero busy timeouts, and emits a deterministic semantic transcript.
 
     The protocol is intentionally smaller than a general concurrency scheduler. It
-    supports explicit begin/try-begin, execute/query, commit, and rollback operations.
+    supports explicit begin/try-begin, execute/query and try-execute/try-query, commit,
+    and rollback operations.
     Structural, SQL, parameter, result, and transcript budgets are encoded in argv so
     the existing CommandTarget replay fingerprint binds them to persisted evidence.
     """
