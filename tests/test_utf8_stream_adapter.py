@@ -183,12 +183,16 @@ def test_target_rejects_invalid_chunk_size(chunk_size: object) -> None:
         (1, -1),
         (True, 2),
         tuple(1 for _ in range(65)),
-        [1, 2],
     ],
 )
-def test_target_rejects_invalid_chunk_pattern(chunk_pattern: object) -> None:
+def test_target_rejects_invalid_chunk_pattern_value(chunk_pattern: object) -> None:
     with pytest.raises(ValueError, match="chunk_pattern"):
         UTF8DecodeTarget(chunk_pattern=chunk_pattern)  # type: ignore[arg-type]
+
+
+def test_target_rejects_non_tuple_chunk_pattern() -> None:
+    with pytest.raises(TypeError, match="chunk_pattern"):
+        UTF8DecodeTarget(chunk_pattern=[1, 2])  # type: ignore[arg-type]
 
 
 def test_chunk_pattern_changes_target_replay_identity() -> None:
