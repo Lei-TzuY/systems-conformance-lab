@@ -4,8 +4,13 @@ from pathlib import Path
 
 import pytest
 
-import systems_conformance as sc
-
+import systems_conformance.repro_archive as repro_archive_module
+from systems_conformance import (
+    CommandTarget,
+    DifferentialHarness,
+    export_repro_archive,
+    import_repro_archive,
+)
 
 pytestmark = pytest.mark.skipif(
     os.name != "posix" or not getattr(os, "O_NOFOLLOW", 0),
@@ -13,8 +18,8 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _target(script: str) -> sc.CommandTarget:
-    return sc.CommandTarget((sys.executable, "-c", script))
+def _target(script: str) -> CommandTarget:
+    return CommandTarget((sys.executable, "-c", script))
 
 
 def test_bounded_snapshot_opens_final_component_without_following_symlinks(
@@ -22,16 +27,16 @@ def test_bounded_snapshot_opens_final_component_without_following_symlinks(
 ) -> None:
     source = tmp_path / "source.bin"
     source.write_bytes(b"bounded")
-    real_open = sc.repro_archive.os.open
+    real_open = repro_archive_module.os.open
     observed_flags = []
 
     def observing_open(path, flags, *args, **kwargs):
         observed_flags.append(flags)
         return real_open(path, flags, *args, **kwargs)
 
-    monkeypatch.setattr(sc.repro_archive.os, "open", observing_open)
+    monkeypatch.setattr(repro_archive_module.os, "open", observing_open)
 
-    assert sc.repro_archive._read_bounded_bytes(
+    assert repro_archive_module._read_bounded_bytes(
         source, max_bytes=32, label="test input"
     ) == b"bounded"
     assert observed_flags
@@ -46,16 +51,16 @@ def test_import_rejects_symlink_swap_to_same_valid_archive_inode(
         "import sys; data=sys.stdin.buffer.read(); "
         "sys.stdout.buffer.write(data.replace(b'BUG', b'BAD'))"
     )
-    harness = sc.DifferentialHarness(candidate=_target(buggy), oracle=_target(echo))
+    harness = DifferentialHarness(candidate=_target(buggy), oracle=_target(echo))
     bundle = harness.write_repro(
         tmp_path / "bundle",
         input_bytes=b"BUG",
         metadata={"source": "nofollow-race-integration"},
     )
-    archive = sc.export_repro_archive(bundle.path, tmp_path / "portable.zip")
+    archive = export_repro_archive(bundle.path, tmp_path / "portable.zip")
     backing = tmp_path / "portable-backing.zip"
     destination = tmp_path / "imported"
-    real_open = sc.repro_archive.os.open
+    real_open = repro_archive_module.os.open
     swapped = False
 
     def racing_open(path, flags, *args, **kwargs):
@@ -66,10 +71,10 @@ def test_import_rejects_symlink_swap_to_same_valid_archive_inode(
             archive.symlink_to(backing.name)
         return real_open(path, flags, *args, **kwargs)
 
-    monkeypatch.setattr(sc.repro_archive.os, "open", racing_open)
+    monkeypatch.setattr(repro_archive_module.os, "open", racing_open)
 
     with pytest.raises(ValueError, match="could not be opened as validated"):
-        sc.import_repro_archive(archive, destination)
+        import_repro_archive(archive, destination)
 
     assert swapped
     assert archive.is_symlink()
