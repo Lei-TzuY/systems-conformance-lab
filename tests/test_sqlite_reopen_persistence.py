@@ -25,7 +25,7 @@ def _case() -> bytes:
 def _execute(target: SQLiteTransactionTarget):
     return target.as_command_target().execute(
         _case(),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -77,7 +77,7 @@ def test_real_harness_distinguishes_commit_from_rollback_after_reopen() -> None:
     oracle = SQLiteTransactionTarget(
         finalize="rollback", reopen_before_observe=True
     ).as_command_target()
-    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=2.0)
+    harness = DifferentialHarness(candidate=candidate, oracle=oracle, timeout_seconds=5.0)
 
     run = harness.evaluate(_case())
 

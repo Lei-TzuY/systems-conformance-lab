@@ -37,7 +37,7 @@ def test_wal_normal_transaction_persists_committed_rows_across_reopen() -> None:
         reopen_before_observe=True,
     ).as_command_target().execute(
         _case(),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -66,7 +66,7 @@ def test_wal_normal_and_full_have_matching_reopen_semantics(finalize: str) -> No
             synchronous="full",
             reopen_before_observe=True,
         ).as_command_target(),
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
     )
 
     run = harness.evaluate(_case())

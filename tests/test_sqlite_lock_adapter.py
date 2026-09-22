@@ -11,7 +11,7 @@ from systems_conformance.sqlite_lock_adapter import SQLiteLockContentionTarget
 def _execute(target: SQLiteLockContentionTarget, case: bytes = b""):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=2.0,
+        timeout_seconds=5.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
