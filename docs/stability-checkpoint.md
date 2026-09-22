@@ -127,3 +127,23 @@ The generic reducer and harness remain unchanged. SQLite request shape and concu
 semantics stay in target-specific modules above the stable core. Real DELETE-vs-WAL
 reader-contention evidence proves the vertical path from process execution through
 structured reduction to minimized reproducible evidence.
+
+
+### Two-connection discovery checkpoint
+
+The two-connection SQLite adapter has now progressed from executable scenarios and
+structured triage to bounded discovery. Valid scenario seeds can be mutated
+deterministically across begin-mode and scalar-parameter dimensions, while a
+target-specific feedback evaluator extracts only finite transcript structure.
+
+A real DELETE-vs-WAL campaign proves discovery rather than fixture enumeration: an
+IMMEDIATE seed matches, the deterministic EXCLUSIVE mutation exposes the journal-mode
+reader-contention difference, and the feedback campaign retains that product mismatch.
+The generic fuzz scheduler, feedback corpus policy, differential harness, and reducer
+remain unchanged; SQLite concurrency semantics stay above the stable core.
+
+Mutation generation is itself structurally bounded before campaign execution: seed
+decode count and candidate-construction visits have independent ceilings, candidate
+visits are claimed before materializing the next JSON case, and exhaustion fails closed
+with deterministic work evidence. This prevents a large valid scenario from expanding
+into unbounded adapter-side work before the generic evaluation budget can apply.
