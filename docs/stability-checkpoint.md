@@ -96,3 +96,20 @@ execution.
 Specialized crash, backup, checkpoint, and multi-process workers are not deprecated by
 this promotion. They remain authoritative where the two-connection program cannot
 express the same failure boundary without weakening evidence.
+
+
+### Two-connection consolidation checkpoint
+
+The bounded scenario executor now owns recognized SQLite busy outcomes for begin,
+non-query, and query operations. This makes stale-reader SQLITE_BUSY_SNAPSHOT and
+DELETE-vs-WAL reader contention executable through the same strict data-plane protocol.
+
+The former fixed WAL snapshot, WAL busy-snapshot, and reader-contention workers are
+retired after equivalent real-process regressions moved onto the generic executor.
+This is an architecture consolidation, not a reduction in evidence: the semantic
+assertions remain executable while duplicate temporary-database and connection
+orchestration is removed.
+
+Crash recovery, online backup, checkpoint, reader-process, writer-process, and
+durability targets remain specialized because their process or failure boundaries are
+outside the two-connection executor's contract.

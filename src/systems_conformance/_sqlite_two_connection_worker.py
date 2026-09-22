@@ -148,7 +148,7 @@ def _decode_step(
             raise base.ProtocolError(f"step {index} {op} accepts only connection and op")
         return _Step(connection=connection, op=op)
 
-    if op in {"execute", "query"}:
+    if op in {"execute", "query", "try_execute", "try_query"}:
         if not {"connection", "op", "sql"} <= set(value):
             raise base.ProtocolError(f"step {index} {op} requires connection, op, and sql")
         if set(value) - {"connection", "op", "sql", "params"}:
@@ -247,6 +247,16 @@ def _configure_connection(connection: sqlite3.Connection) -> None:
 
 def _begin(connection: sqlite3.Connection, mode: str) -> None:
     connection.execute(f"BEGIN {mode.upper()}")
+
+
+def _busy_error(exc: sqlite3.OperationalError) -> tuple[str, int]:
+    error_name = getattr(exc, "sqlite_errorname", type(exc).__name__)
+    if error_name not in _BUSY_ERRORS:
+        raise exc
+    error_code = getattr(exc, "sqlite_errorcode", None)
+    if isinstance(error_code, bool) or not isinstance(error_code, int):
+        raise TypeError("SQLite busy error did not expose an integer error code") from exc
+    return error_name, error_code
 
 
 def _normalize_value(value: Any, *, max_result_value_bytes: int) -> Any:
@@ -376,9 +386,7 @@ def _run(
                     try:
                         _begin(connection, step.mode)
                     except sqlite3.OperationalError as exc:
-                        error_name = getattr(exc, "sqlite_errorname", type(exc).__name__)
-                        if error_name not in _BUSY_ERRORS:
-                            raise
+                        error_name, _error_code = _busy_error(exc)
                         record["ok"] = False
                         record["error"] = error_name
                     else:
@@ -395,23 +403,45 @@ def _run(
                             f"connection {step.connection} rollback without transaction"
                         )
                     connection.rollback()
-                elif step.op == "execute":
+                elif step.op in {"execute", "try_execute"}:
                     assert step.sql is not None
-                    cursor = connection.execute(step.sql, step.params)
-                    if cursor.description is not None:
-                        raise base.ProtocolError("execute step SQL must not return columns")
-                elif step.op == "query":
+                    try:
+                        cursor = connection.execute(step.sql, step.params)
+                    except sqlite3.OperationalError as exc:
+                        if step.op != "try_execute":
+                            raise
+                        error_name, error_code = _busy_error(exc)
+                        record["ok"] = False
+                        record["error"] = error_name
+                        record["error_code"] = error_code
+                    else:
+                        if cursor.description is not None:
+                            raise base.ProtocolError("execute step SQL must not return columns")
+                        if step.op == "try_execute":
+                            record["ok"] = True
+                elif step.op in {"query", "try_query"}:
                     assert step.sql is not None
-                    cursor = connection.execute(step.sql, step.params)
-                    columns, rows = _collect_query(
-                        cursor,
-                        max_result_rows=max_result_rows,
-                        max_result_columns=max_result_columns,
-                        max_result_value_bytes=max_result_value_bytes,
-                        max_result_bytes=max_result_bytes,
-                    )
-                    record["columns"] = columns
-                    record["rows"] = rows
+                    try:
+                        cursor = connection.execute(step.sql, step.params)
+                    except sqlite3.OperationalError as exc:
+                        if step.op != "try_query":
+                            raise
+                        error_name, error_code = _busy_error(exc)
+                        record["ok"] = False
+                        record["error"] = error_name
+                        record["error_code"] = error_code
+                    else:
+                        columns, rows = _collect_query(
+                            cursor,
+                            max_result_rows=max_result_rows,
+                            max_result_columns=max_result_columns,
+                            max_result_value_bytes=max_result_value_bytes,
+                            max_result_bytes=max_result_bytes,
+                        )
+                        if step.op == "try_query":
+                            record["ok"] = True
+                        record["columns"] = columns
+                        record["rows"] = rows
                 else:
                     raise AssertionError(f"unhandled step op: {step.op}")
 
