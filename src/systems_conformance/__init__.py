@@ -72,6 +72,18 @@ from .sqlite_transaction_triage import (
     reduce_sqlite_transaction_failure_to_repro,
 )
 from .sqlite_two_connection_adapter import SQLiteTwoConnectionScenarioTarget
+from .sqlite_two_connection_reducer import (
+    sqlite_two_connection_parameter_complexity,
+    sqlite_two_connection_parameter_reductions,
+    sqlite_two_connection_setup_count,
+    sqlite_two_connection_setup_deletions,
+    sqlite_two_connection_step_count,
+    sqlite_two_connection_step_deletions,
+)
+from .sqlite_two_connection_triage import (
+    SQLiteTwoConnectionReducedFailureRepro,
+    reduce_sqlite_two_connection_failure_to_repro,
+)
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
 from .write_fault import FaultingBinaryWriter
 
@@ -114,6 +126,7 @@ __all__ = [
     "SQLiteTransactionParameterMutations",
     "SQLiteTransactionReducedFailureRepro",
     "SQLiteTransactionTarget",
+    "SQLiteTwoConnectionReducedFailureRepro",
     "SQLiteTwoConnectionScenarioTarget",
     "StreamCapture",
     "compare_results",
@@ -130,6 +143,7 @@ __all__ = [
     "reduce_failure_to_repro",
     "reduce_sqlite_query_failure_to_repro",
     "reduce_sqlite_transaction_failure_to_repro",
+    "reduce_sqlite_two_connection_failure_to_repro",
     "replay_repro_archive",
     "run_failure_discovery_campaign",
     "run_feedback_guided_campaign",
@@ -149,5 +163,11 @@ __all__ = [
     "sqlite_transaction_parameter_reductions",
     "sqlite_transaction_statement_count",
     "sqlite_transaction_statement_deletions",
+    "sqlite_two_connection_parameter_complexity",
+    "sqlite_two_connection_parameter_reductions",
+    "sqlite_two_connection_setup_count",
+    "sqlite_two_connection_setup_deletions",
+    "sqlite_two_connection_step_count",
+    "sqlite_two_connection_step_deletions",
     "write_repro_bundle",
 ]

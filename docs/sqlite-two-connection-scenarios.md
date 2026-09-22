@@ -90,3 +90,26 @@ The regressions preserve the important distinctions rather than flattening them:
 Only these simple same-process two-connection workers are consolidated. Crash recovery,
 backup, checkpoint, multi-process coordination, and durability workers remain separate
 because their process/failure boundaries are not expressible by this executor.
+
+
+## Structured failure reduction and repro
+
+The two-connection adapter also has a target-specific structured triage path. It does
+not add scheduling semantics to the generic harness. Given an already observed fuzz
+failure, the SQLite adapter reduces three bounded dimensions in order:
+
+1. ordered scenario steps, while retaining at least one step;
+2. setup statements, which may reduce to an empty list;
+3. JSON-scalar parameters on retained steps.
+
+Each candidate is executed through DifferentialHarness.preserves_failure and must retain
+the exact stable failure signature captured by the original witness. Evaluation and
+candidate-enumeration budgets are bounded independently for every phase. A final
+write_repro execution revalidates the minimized case under the expected signature before
+evidence is published.
+
+The integration regression uses real DELETE and WAL targets whose reader-contention
+transcripts differ. It starts from a deliberately noisy scenario, removes irrelevant
+steps and setup, simplifies the retained query parameter, writes the minimized repro,
+and replays it through the normal repro path. This is reduction of executable evidence,
+not a synthetic reducer-only fixture.

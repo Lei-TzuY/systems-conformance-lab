@@ -113,3 +113,17 @@ orchestration is removed.
 Crash recovery, online backup, checkpoint, reader-process, writer-process, and
 durability targets remain specialized because their process or failure boundaries are
 outside the two-connection executor's contract.
+
+
+### Two-connection structured triage checkpoint
+
+After consolidating simple reader/writer scenarios into the bounded executor, the next
+architecture layer is failure minimization rather than additional fixed workers. The
+two-connection adapter now mirrors the mature query/transaction path with deterministic
+step deletion, setup deletion, scalar parameter simplification, stable-signature
+preservation, bounded reducer work, repro publication, and replay.
+
+The generic reducer and harness remain unchanged. SQLite request shape and concurrency
+semantics stay in target-specific modules above the stable core. Real DELETE-vs-WAL
+reader-contention evidence proves the vertical path from process execution through
+structured reduction to minimized reproducible evidence.
