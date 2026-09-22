@@ -72,6 +72,10 @@ from .sqlite_transaction_triage import (
     reduce_sqlite_transaction_failure_to_repro,
 )
 from .sqlite_two_connection_adapter import SQLiteTwoConnectionScenarioTarget
+from .sqlite_two_connection_discovery import (
+    SQLiteTwoConnectionDiscoveryRepro,
+    discover_sqlite_two_connection_failure_to_repro,
+)
 from .sqlite_two_connection_feedback import (
     SQLiteTwoConnectionFeedbackEvaluator,
     sqlite_two_connection_feedback_features,
@@ -134,6 +138,7 @@ __all__ = [
     "SQLiteTransactionParameterMutations",
     "SQLiteTransactionReducedFailureRepro",
     "SQLiteTransactionTarget",
+    "SQLiteTwoConnectionDiscoveryRepro",
     "SQLiteTwoConnectionFeedbackEvaluator",
     "SQLiteTwoConnectionMutationBudgetExhausted",
     "SQLiteTwoConnectionReducedFailureRepro",
@@ -141,6 +146,7 @@ __all__ = [
     "SQLiteTwoConnectionScenarioTarget",
     "StreamCapture",
     "compare_results",
+    "discover_sqlite_two_connection_failure_to_repro",
     "enforce_repro_archive_retention",
     "enforce_repro_retention",
     "export_durable_repro_archive",
