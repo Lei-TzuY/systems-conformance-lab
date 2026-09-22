@@ -14,7 +14,7 @@ def validate_chunk_pattern(value: object) -> tuple[int, ...]:
     if value is None:
         return ()
     if not isinstance(value, tuple):
-        raise ValueError("chunk_pattern must be a tuple of positive integers")
+        raise TypeError("chunk_pattern must be a tuple of positive integers")
     if not value:
         raise ValueError("chunk_pattern must be non-empty")
     if len(value) > MAX_CHUNK_PATTERN_LENGTH:
