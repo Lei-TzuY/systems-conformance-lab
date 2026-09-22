@@ -6,6 +6,8 @@ import json
 import sys
 from collections.abc import Sequence
 
+from ._utf8_chunking import parse_chunk_pattern
+
 
 def _positive_int(value: str) -> int:
     parsed = int(value)
@@ -14,20 +16,42 @@ def _positive_int(value: str) -> int:
     return parsed
 
 
+def _chunk_pattern(value: str) -> tuple[int, ...]:
+    try:
+        return parse_chunk_pattern(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+
+
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--mode", choices=("oneshot", "incremental"), required=True)
     parser.add_argument("--errors", choices=("strict", "replace", "ignore"), required=True)
     parser.add_argument("--chunk-size", type=_positive_int, required=True)
+    parser.add_argument("--chunk-pattern", type=_chunk_pattern, default=())
     return parser.parse_args(argv)
 
 
-def _decode_incrementally(raw: bytes, *, errors: str, chunk_size: int) -> str:
+def _decode_incrementally(
+    raw: bytes,
+    *,
+    errors: str,
+    chunk_size: int,
+    chunk_pattern: tuple[int, ...],
+) -> str:
     decoder_type = codecs.getincrementaldecoder("utf-8")
     decoder = decoder_type(errors=errors)
     parts: list[str] = []
-    for start in range(0, len(raw), chunk_size):
-        parts.append(decoder.decode(raw[start : start + chunk_size], final=False))
+
+    pattern = chunk_pattern or (chunk_size,)
+    start = 0
+    pattern_index = 0
+    while start < len(raw):
+        width = pattern[pattern_index % len(pattern)]
+        parts.append(decoder.decode(raw[start : start + width], final=False))
+        start += width
+        pattern_index += 1
+
     parts.append(decoder.decode(b"", final=True))
     return "".join(parts)
 
@@ -57,6 +81,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 raw,
                 errors=args.errors,
                 chunk_size=args.chunk_size,
+                chunk_pattern=args.chunk_pattern,
             )
     except UnicodeDecodeError:
         output = _encode_result(

@@ -212,3 +212,17 @@ claim is exercised rather than skipped.
 The cross-runtime claim is deliberately limited to shared UTF-8 strict/replace
 semantics. Python's ignore mode and broader Unicode/ICU services are not generalized by
 this checkpoint.
+
+
+### UTF-8 irregular segmentation checkpoint
+
+Cross-runtime UTF-8 interoperability now covers a transport segmentation policy that is
+independent of a single fixed chunk width. Python and Node targets accept the same
+bounded cyclic chunk pattern while preserving raw stdin bytes and the existing semantic
+JSON comparison surface.
+
+Executable evidence crosses uneven boundaries through valid multibyte sequences, BOM,
+malformed and truncated input, and strict/replace policies. Pattern configuration is
+bounded to 64 positive widths and participates in replay identity. Legacy fixed-size
+targets retain their previous argv when no pattern is configured, so the new capability
+extends rather than replaces the established evidence surface.

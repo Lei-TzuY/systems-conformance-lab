@@ -19,17 +19,20 @@ def _harness(
     mode: str = "incremental",
     errors: str = "strict",
     chunk_size: int = 1,
+    chunk_pattern: tuple[int, ...] | None = None,
 ) -> DifferentialHarness:
     return DifferentialHarness(
         candidate=UTF8NodeDecodeTarget(
             mode=mode,  # type: ignore[arg-type]
             errors=errors,  # type: ignore[arg-type]
             chunk_size=chunk_size,
+            chunk_pattern=chunk_pattern,
         ).as_command_target(),
         oracle=UTF8DecodeTarget(
             mode=mode,  # type: ignore[arg-type]
             errors=errors,  # type: ignore[arg-type]
             chunk_size=chunk_size,
+            chunk_pattern=chunk_pattern,
         ).as_command_target(),
         timeout_seconds=5.0,
         max_input_bytes=64 * 1024,
@@ -66,6 +69,52 @@ def test_node_matches_python_for_valid_multibyte_and_bom(
         "ok": True,
         "text": "\ufeffAé中🙂Z",
     }
+
+
+@pytest.mark.parametrize(
+    "chunk_pattern",
+    [
+        (1, 2, 4),
+        (2, 1, 3, 1),
+        (4, 1, 2),
+    ],
+)
+def test_node_matches_python_for_irregular_multibyte_segmentation(
+    chunk_pattern: tuple[int, ...],
+) -> None:
+    raw = b"\xef\xbb\xbf" + "Aé中🙂Z".encode()
+
+    run = _harness(
+        mode="incremental",
+        errors="strict",
+        chunk_pattern=chunk_pattern,
+    ).evaluate(raw)
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert _payload(run.candidate.stdout.text) == {
+        "ok": True,
+        "text": "\ufeffAé中🙂Z",
+    }
+
+
+@pytest.mark.parametrize("errors", ["strict", "replace"])
+@pytest.mark.parametrize("chunk_pattern", [(1, 3, 2), (2, 1, 1, 4)])
+def test_node_matches_python_for_irregular_invalid_segmentation(
+    errors: str,
+    chunk_pattern: tuple[int, ...],
+) -> None:
+    raw = b"A\xf0(\x8c(B\xe2\x82"
+
+    run = _harness(
+        mode="incremental",
+        errors=errors,
+        chunk_pattern=chunk_pattern,
+    ).evaluate(raw)
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert run.candidate.stdout.text == run.oracle.stdout.text
 
 
 @pytest.mark.parametrize(
@@ -126,7 +175,12 @@ def test_cross_runtime_strict_fuzz_schedule_has_no_differential_failure() -> Non
             b"\xef\xbb\xbfZ",
         )
     )
-    harness = _harness(mode="incremental", errors="strict", chunk_size=1)
+    harness = _harness(
+        mode="incremental",
+        errors="strict",
+        chunk_size=1,
+        chunk_pattern=(1, 3, 2),
+    )
 
     campaign = run_fuzz_campaign(
         cases=cases,
@@ -157,3 +211,39 @@ def test_node_target_rejects_unknown_decode_mode(mode: str) -> None:
 def test_node_target_rejects_invalid_chunk_size(chunk_size: object) -> None:
     with pytest.raises(ValueError, match="chunk_size"):
         UTF8NodeDecodeTarget(chunk_size=chunk_size)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "chunk_pattern",
+    [
+        (),
+        (1, 0),
+        (1, -1),
+        (True, 2),
+        tuple(1 for _ in range(65)),
+    ],
+)
+def test_node_target_rejects_invalid_chunk_pattern_value(chunk_pattern: object) -> None:
+    with pytest.raises(ValueError, match="chunk_pattern"):
+        UTF8NodeDecodeTarget(chunk_pattern=chunk_pattern)  # type: ignore[arg-type]
+
+
+def test_node_target_rejects_non_tuple_chunk_pattern() -> None:
+    with pytest.raises(TypeError, match="chunk_pattern"):
+        UTF8NodeDecodeTarget(chunk_pattern=[1, 2])  # type: ignore[arg-type]
+
+
+def test_node_chunk_pattern_preserves_legacy_script_when_absent() -> None:
+    fixed = UTF8NodeDecodeTarget(
+        mode="incremental",
+        chunk_size=2,
+    ).as_command_target()
+    patterned = UTF8NodeDecodeTarget(
+        mode="incremental",
+        chunk_size=2,
+        chunk_pattern=(1, 3, 2),
+    ).as_command_target()
+
+    assert "CHUNK_PATTERN" not in fixed.argv[2]
+    assert "CHUNK_PATTERN" in patterned.argv[2]
+    assert fixed.argv != patterned.argv
