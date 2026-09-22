@@ -12,12 +12,18 @@ from systems_conformance import (
 )
 
 
-def _harness(*, errors: str = "strict", chunk_size: int = 1) -> DifferentialHarness:
+def _harness(
+    *,
+    errors: str = "strict",
+    chunk_size: int = 1,
+    chunk_pattern: tuple[int, ...] | None = None,
+) -> DifferentialHarness:
     return DifferentialHarness(
         candidate=UTF8DecodeTarget(
             mode="incremental",
             errors=errors,  # type: ignore[arg-type]
             chunk_size=chunk_size,
+            chunk_pattern=chunk_pattern,
         ).as_command_target(),
         oracle=UTF8DecodeTarget(
             mode="oneshot",
@@ -49,6 +55,45 @@ def test_incremental_matches_oneshot_across_multibyte_chunk_boundaries(
         "ok": True,
         "text": "Aé中🙂Z",
     }
+
+
+@pytest.mark.parametrize(
+    "chunk_pattern",
+    [
+        (1, 2, 4),
+        (2, 1, 3, 1),
+        (4, 1, 2),
+    ],
+)
+def test_incremental_matches_oneshot_with_irregular_chunk_pattern(
+    chunk_pattern: tuple[int, ...],
+) -> None:
+    raw = "Aé中🙂Z".encode()
+    run = _harness(chunk_pattern=chunk_pattern).evaluate(raw)
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert _payload(run.candidate.stdout.text) == {
+        "ok": True,
+        "text": "Aé中🙂Z",
+    }
+
+
+@pytest.mark.parametrize("errors", ["strict", "replace"])
+@pytest.mark.parametrize("chunk_pattern", [(1, 3, 2), (2, 1, 1, 4)])
+def test_irregular_chunk_pattern_preserves_error_semantics(
+    errors: str,
+    chunk_pattern: tuple[int, ...],
+) -> None:
+    raw = b"A\xf0(\x8c(B\xe2\x82"
+    run = _harness(
+        errors=errors,
+        chunk_pattern=chunk_pattern,
+    ).evaluate(raw)
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert run.candidate.stdout.text == run.oracle.stdout.text
 
 
 @pytest.mark.parametrize(
@@ -128,3 +173,30 @@ def test_target_rejects_unknown_error_policy(errors: str) -> None:
 def test_target_rejects_invalid_chunk_size(chunk_size: object) -> None:
     with pytest.raises(ValueError, match="chunk_size"):
         UTF8DecodeTarget(chunk_size=chunk_size)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "chunk_pattern",
+    [
+        (),
+        (1, 0),
+        (1, -1),
+        (True, 2),
+        tuple(1 for _ in range(65)),
+        [1, 2],
+    ],
+)
+def test_target_rejects_invalid_chunk_pattern(chunk_pattern: object) -> None:
+    with pytest.raises(ValueError, match="chunk_pattern"):
+        UTF8DecodeTarget(chunk_pattern=chunk_pattern)  # type: ignore[arg-type]
+
+
+def test_chunk_pattern_changes_target_replay_identity() -> None:
+    fixed = UTF8DecodeTarget(mode="incremental", chunk_size=2).as_command_target()
+    patterned = UTF8DecodeTarget(
+        mode="incremental",
+        chunk_size=2,
+        chunk_pattern=(1, 3, 2),
+    ).as_command_target()
+
+    assert fixed.argv != patterned.argv
