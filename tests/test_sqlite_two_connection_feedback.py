@@ -96,7 +96,7 @@ def test_feedback_features_capture_bounded_transcript_structure_without_raw_valu
     features = sqlite_two_connection_feedback_features(run)
 
     assert "comparison:match" in features
-    assert "candidate:transcript:steps:3" in features
+    assert "candidate:transcript:steps:3-3" in features
     assert "candidate:step:connection:a" in features
     assert "candidate:step:connection:b" in features
     assert "candidate:step:op:begin" in features
@@ -116,6 +116,34 @@ def test_feedback_features_capture_bounded_transcript_structure_without_raw_valu
         and "517" not in feature
         for feature in features
     )
+
+
+def test_feedback_features_bound_malformed_step_labels_as_other() -> None:
+    stdout = json.dumps(
+        {
+            "steps": [
+                {
+                    "connection": ["a"],
+                    "op": {"name": "try_query"},
+                    "mode": ["exclusive"],
+                    "error": {"name": "SQLITE_BUSY"},
+                }
+            ]
+        },
+        separators=(",", ":"),
+    )
+    execution = _execution(stdout=stdout)
+    run = DifferentialRun(
+        candidate=execution,
+        oracle=execution,
+        comparison=ComparisonResult(equivalent=True, classification="match", mismatches=()),
+        signature=None,
+    )
+
+    features = sqlite_two_connection_feedback_features(run)
+
+    assert "candidate:step:connection:other" in features
+    assert "candidate:step:op:other" in features
 
 
 def test_feedback_features_bucket_worker_errors_without_embedding_stderr() -> None:
