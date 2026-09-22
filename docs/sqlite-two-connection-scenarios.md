@@ -124,6 +124,14 @@ probes only two dimensions that keep the request structure valid: alternate
 does not rewrite SQL, reorder steps, change connection assignment, invent operations,
 or introduce arbitrary scheduling.
 
+Mutation construction has independent structural ceilings in addition to the per-case
+byte limit. Seed preprocessing is capped before decoding begins, and every attempted
+mode/parameter mutation claims one candidate visit before a full JSON candidate is
+constructed. Duplicate or oversized candidates still consume that visit. Exhausting the
+candidate budget raises `SQLiteTwoConnectionMutationBudgetExhausted` with visit/limit
+evidence instead of silently publishing a partial mutation schedule. Successful
+schedules expose `candidate_visits` for deterministic work accounting.
+
 `sqlite_two_connection_feedback_features` consumes real differential transcripts and
 reports a bounded vocabulary: comparison class/mismatch fields, process outcome classes,
 step count, connection/op/mode classes, recognized try-operation busy outcomes, and
