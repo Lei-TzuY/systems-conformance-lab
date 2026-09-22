@@ -227,3 +227,19 @@ def test_node_target_rejects_invalid_chunk_size(chunk_size: object) -> None:
 def test_node_target_rejects_invalid_chunk_pattern(chunk_pattern: object) -> None:
     with pytest.raises(ValueError, match="chunk_pattern"):
         UTF8NodeDecodeTarget(chunk_pattern=chunk_pattern)  # type: ignore[arg-type]
+
+
+def test_node_chunk_pattern_preserves_legacy_script_when_absent() -> None:
+    fixed = UTF8NodeDecodeTarget(
+        mode="incremental",
+        chunk_size=2,
+    ).as_command_target()
+    patterned = UTF8NodeDecodeTarget(
+        mode="incremental",
+        chunk_size=2,
+        chunk_pattern=(1, 3, 2),
+    ).as_command_target()
+
+    assert "CHUNK_PATTERN" not in fixed.argv[2]
+    assert "CHUNK_PATTERN" in patterned.argv[2]
+    assert fixed.argv != patterned.argv
