@@ -290,6 +290,8 @@ def _collect_query(
     columns = [item[0] for item in cursor.description]
     columns_json = _json_bytes(columns)
     used_bytes = len(b'{"columns":') + len(columns_json) + len(b',"rows":[]}')
+    if used_bytes > max_result_bytes:
+        raise ResultBudgetExceeded(f"result exceeds max_result_bytes: {max_result_bytes}")
 
     rows: list[list[Any]] = []
     for row in cursor:

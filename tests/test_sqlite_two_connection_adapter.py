@@ -182,6 +182,20 @@ def test_result_row_budget_fails_closed() -> None:
     assert result.stderr.text.strip() == "result_error: result exceeds max_result_rows: 1"
 
 
+def test_empty_query_still_enforces_result_byte_budget() -> None:
+    case = _case(
+        setup=[],
+        steps=[{"connection": "a", "op": "query", "sql": "SELECT 1 AS oversized WHERE 0"}],
+    )
+
+    result = _execute(SQLiteTwoConnectionScenarioTarget(max_result_bytes=8), case)
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 4
+    assert result.stdout.text == ""
+    assert result.stderr.text.strip() == "result_error: result exceeds max_result_bytes: 8"
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
