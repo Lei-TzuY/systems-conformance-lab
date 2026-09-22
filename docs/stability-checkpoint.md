@@ -178,3 +178,19 @@ that the evidence identity survives transport independently of path naming. Exis
 archive validation and replay primitives remain authoritative; this checkpoint adds only
 target-specific composition above them. No-failure discovery and pre-existing archive
 destinations fail closed before publishing new transport evidence.
+
+
+### Second conformance domain: UTF-8 streaming checkpoint
+
+The repository has promoted beyond a single SQLite-centered executable domain.
+UTF8DecodeTarget introduces a raw-byte streaming codec boundary above the unchanged
+generic process/differential substrate. One-shot and incremental UTF-8 decoding are
+compared through real child processes across multibyte chunk boundaries, invalid and
+truncated input, and strict/replace/ignore policies.
+
+A finite deterministic byte-mutation campaign is also exhausted against this second
+domain and must produce no differential failure. This proves that the shared byte-input,
+process execution, comparison, and fuzz scheduling layers are reusable without a JSON
+request protocol or SQLite lifecycle. The checkpoint intentionally stops short of
+cross-runtime Unicode claims; broader codec interoperability is a later architectural
+phase.
