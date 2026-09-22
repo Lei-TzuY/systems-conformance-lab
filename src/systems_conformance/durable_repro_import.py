@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import errno
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 
-from .directory_publish import publish_directory_no_replace
+from .directory_publish import directory_identity, publish_directory_no_replace
 from .directory_sync_fault import FaultingDirectorySync
 from .fault import FaultController, FaultSpec
 from .fsync_fault import FaultingFileSync
@@ -53,8 +54,8 @@ def import_durable_repro_archive(
     The archive first traverses the ordinary bounded importer into a private
     staging bundle. The validated ``input.bin`` and ``manifest.json`` are then
     fsynced, followed by the staging bundle directory. Only after those durable
-    preconditions succeed is the complete directory published with an atomic
-    no-replace primitive and its containing directory fsynced.
+    preconditions succeed is the exact validated directory inode published with
+    an atomic no-replace primitive and its containing directory fsynced.
 
     ``sync_fault_spec`` may use ``operation='import_sync'`` and ``kind='io_error'``
     to inject deterministic EIO at occurrence 0 (input fsync), 1 (manifest fsync),
@@ -111,7 +112,14 @@ def import_durable_repro_archive(
         _checkpoint(controller)
         _sync_directory(staged)
 
-        publish_directory_no_replace(staged, destination)
+        staged_metadata = staged.stat(follow_symlinks=False)
+        if not stat.S_ISDIR(staged_metadata.st_mode):
+            raise ValueError("durable repro import staging object is not a directory")
+        publish_directory_no_replace(
+            staged,
+            destination,
+            expected_identity=directory_identity(staged_metadata),
+        )
         published = True
 
         _checkpoint(controller)

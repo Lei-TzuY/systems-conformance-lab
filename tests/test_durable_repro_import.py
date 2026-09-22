@@ -121,6 +121,43 @@ def test_durable_import_does_not_clobber_competing_empty_directory(
     assert replay.reproduced
 
 
+@pytest.mark.skipif(os.name == "nt", reason="directory fsync is not portable on Windows")
+def test_durable_import_rejects_replaced_staging_directory(tmp_path, monkeypatch) -> None:
+    harness, archive = make_archive(tmp_path)
+    destination = tmp_path / "imported"
+    real_publish = durable_import_module.publish_directory_no_replace
+    replaced = False
+
+    def replace_then_publish(staging, final, *, expected_identity=None):
+        nonlocal replaced
+        displaced = staging.with_name("validated-bundle")
+        staging.rename(displaced)
+        staging.mkdir()
+        (staging / "input.bin").write_bytes(b"attacker-controlled")
+        (staging / "manifest.json").write_text("{}", encoding="utf-8")
+        replaced = True
+        real_publish(
+            staging,
+            final,
+            expected_identity=expected_identity,
+        )
+
+    monkeypatch.setattr(
+        durable_import_module,
+        "publish_directory_no_replace",
+        replace_then_publish,
+    )
+
+    with pytest.raises(ValueError, match="staging directory changed before publication"):
+        import_durable_repro_archive(archive, destination)
+
+    assert replaced
+    assert not destination.exists()
+    assert not list(tmp_path.glob(".imported.durable-import-*"))
+    replay = harness.replay_repro(tmp_path / "original")
+    assert replay.reproduced
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Windows-specific fail-closed contract")
 def test_durable_import_fails_closed_before_windows_publication(tmp_path) -> None:
     _, archive = make_archive(tmp_path)
