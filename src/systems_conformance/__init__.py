@@ -76,7 +76,10 @@ from .sqlite_two_connection_feedback import (
     SQLiteTwoConnectionFeedbackEvaluator,
     sqlite_two_connection_feedback_features,
 )
-from .sqlite_two_connection_fuzz import SQLiteTwoConnectionScenarioMutations
+from .sqlite_two_connection_fuzz import (
+    SQLiteTwoConnectionMutationBudgetExhausted,
+    SQLiteTwoConnectionScenarioMutations,
+)
 from .sqlite_two_connection_reducer import (
     sqlite_two_connection_parameter_complexity,
     sqlite_two_connection_parameter_reductions,
@@ -132,6 +135,7 @@ __all__ = [
     "SQLiteTransactionReducedFailureRepro",
     "SQLiteTransactionTarget",
     "SQLiteTwoConnectionFeedbackEvaluator",
+    "SQLiteTwoConnectionMutationBudgetExhausted",
     "SQLiteTwoConnectionReducedFailureRepro",
     "SQLiteTwoConnectionScenarioMutations",
     "SQLiteTwoConnectionScenarioTarget",
