@@ -26,6 +26,3 @@ testpaths = ["tests"]
 target-version = "py311"
 line-length = 100
 src = ["src"]
-
-[tool.ruff.lint.isort]
-known-first-party = ["systems_conformance"]
