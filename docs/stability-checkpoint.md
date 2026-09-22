@@ -147,3 +147,19 @@ decode count and candidate-construction visits have independent ceilings, candid
 visits are claimed before materializing the next JSON case, and exhaustion fails closed
 with deterministic work evidence. This prevents a large valid scenario from expanding
 into unbounded adapter-side work before the generic evaluation budget can apply.
+
+
+### Two-connection discovery-to-repro checkpoint
+
+The adapter now closes the composition gap between bounded discovery and structured
+triage. A target-specific orchestration function runs deterministic feedback-guided
+scenario exploration, selects the first retained stable failure, reduces that exact
+witness through the established step/setup/parameter phases, publishes a repro under the
+captured signature, and leaves replay validation to the existing harness contract.
+
+This is executable cross-layer integration rather than another fixed scenario worker.
+A real matching `IMMEDIATE` seed is mutated to the `EXCLUSIVE` DELETE-vs-WAL
+reader-contention difference, the campaign-retained witness is minimized, and the
+resulting context-bound repro replays with the same stable failure identity. Campaign,
+mutation-construction, and reducer work remain independently bounded; no-failure
+campaigns fail closed without publishing evidence.
