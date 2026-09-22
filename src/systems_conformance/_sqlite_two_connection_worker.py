@@ -255,7 +255,7 @@ def _busy_error(exc: sqlite3.OperationalError) -> tuple[str, int]:
         raise exc
     error_code = getattr(exc, "sqlite_errorcode", None)
     if isinstance(error_code, bool) or not isinstance(error_code, int):
-        raise RuntimeError("SQLite busy error did not expose an integer error code") from exc
+        raise TypeError("SQLite busy error did not expose an integer error code") from exc
     return error_name, error_code
 
 
