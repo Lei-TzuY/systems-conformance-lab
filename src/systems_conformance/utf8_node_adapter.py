@@ -7,7 +7,6 @@ from typing import Literal
 
 from .harness import CommandTarget
 
-
 _NODE_SCRIPT = r"""
 const fs = require("node:fs");
 const { TextDecoder } = require("node:util");
