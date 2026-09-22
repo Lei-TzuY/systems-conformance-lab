@@ -167,3 +167,28 @@ retains that witness, structured triage removes irrelevant steps/setup and simpl
 the retained scalar parameter, then the normal context-bound repro replay preserves the
 same stable product-mismatch signature. No discovery, reduction, or replay policy is
 moved into the generic harness.
+
+
+## Portable archive evidence lifecycle
+
+The discovery-to-repro pipeline now composes with the existing deterministic repro
+archive transport through discover_sqlite_two_connection_failure_to_archive. This
+target-specific boundary performs four executable stages without moving SQLite policy
+into the generic core:
+
+1. discover a stable DELETE-vs-WAL scenario mismatch and structurally minimize it;
+2. export the validated minimized repro as the generic portable ZIP transport;
+3. replay that archive through bounded snapshot import, replay-context validation, and
+   exact failure-signature reproduction;
+4. return the SHA-256 of the exact immutable archive snapshot that was replayed.
+
+The digest is transport evidence, not a filename-derived identity. A later consumer can
+copy or move the archive and pass the returned digest to replay_repro_archive as the
+expected archive SHA-256; path replacement is then rejected before bundle import or
+target execution.
+
+Archive destination collisions are rejected before discovery begins, so an already-owned
+transport path does not leave a newly-created repro behind. A no-failure campaign also
+publishes neither repro nor archive. This layer intentionally claims portable validated
+transport, not durable fsync publication; durable archive storage remains the separate
+generic policy already implemented by the repro archive subsystem.
