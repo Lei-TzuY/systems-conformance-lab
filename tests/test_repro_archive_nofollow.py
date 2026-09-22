@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 import pytest
-
 import systems_conformance.repro_archive as repro_archive_module
 from systems_conformance import (
     CommandTarget,
@@ -14,8 +13,8 @@ from systems_conformance import (
 
 
 pytestmark = pytest.mark.skipif(
-    not getattr(os, "O_NOFOLLOW", 0),
-    reason="platform does not expose O_NOFOLLOW",
+    os.name != "posix" or not getattr(os, "O_NOFOLLOW", 0),
+    reason="platform does not provide POSIX O_NOFOLLOW semantics",
 )
 
 
