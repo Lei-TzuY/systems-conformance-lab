@@ -143,3 +143,27 @@ between DELETE and WAL. A deterministic mode mutation reaches `EXCLUSIVE`; DELET
 reports reader `SQLITE_BUSY` while WAL permits the reader, producing a real
 `product_mismatch`. The same path is exercised through the feedback-guided campaign,
 which retains the failure witness without changing the generic fuzz/feedback core.
+
+
+## Discovery-to-triage repro pipeline
+
+The discovery and structured-triage layers now compose through one target-specific
+executable boundary: `discover_sqlite_two_connection_failure_to_repro`. The function
+runs the existing feedback-guided campaign with deterministic scenario mutations, stops
+at the first retained stable failure, passes that exact `FuzzFailure` into the existing
+step/setup/parameter reducer, and publishes the minimized case only after
+`write_repro` revalidates the captured signature.
+
+All work ceilings remain explicit at their owning layer. Campaign evaluations, corpus
+growth, and feedback-feature visits remain generic feedback budgets; every per-parent
+scenario mutation schedule retains its own construction ceiling; and each structured
+reduction phase retains independent evaluation and candidate-visit limits. If the
+campaign discovers no stable failure within its limits, the pipeline fails closed before
+creating a repro directory.
+
+The end-to-end regression starts from a matching `IMMEDIATE` DELETE-vs-WAL scenario.
+Deterministic mutation discovers the `EXCLUSIVE` reader-contention mismatch, feedback
+retains that witness, structured triage removes irrelevant steps/setup and simplifies
+the retained scalar parameter, then the normal context-bound repro replay preserves the
+same stable product-mismatch signature. No discovery, reduction, or replay policy is
+moved into the generic harness.
