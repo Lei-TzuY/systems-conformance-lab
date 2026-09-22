@@ -69,7 +69,11 @@ def test_scenario_mutations_validate_shape_and_bounds() -> None:
         SQLiteTwoConnectionScenarioMutations([b'{"setup":[],"steps":[]}'])
     with pytest.raises(ValueError, match="connection"):
         SQLiteTwoConnectionScenarioMutations(
-            [b'{"setup":[],"steps":[{"connection":"c","op":"rollback"}]}']
+            [b'{"setup":[],"steps":[{"connection":["c"],"op":"rollback"}]}']
+        )
+    with pytest.raises(ValueError, match="op is unsupported"):
+        SQLiteTwoConnectionScenarioMutations(
+            [b'{"setup":[],"steps":[{"connection":"a","op":{"name":"rollback"}}]}']
         )
     with pytest.raises(ValueError, match="mode"):
         SQLiteTwoConnectionScenarioMutations(

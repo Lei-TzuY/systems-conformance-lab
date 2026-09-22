@@ -103,10 +103,10 @@ def _decode_seed(seed: bytes) -> dict[str, Any]:
         if not isinstance(step, dict):
             raise TypeError(f"step {index} must be a JSON object")
         connection = step.get("connection")
-        if connection not in {"a", "b"}:
+        if not isinstance(connection, str) or connection not in {"a", "b"}:
             raise ValueError(f"step {index} connection must be 'a' or 'b'")
         op = step.get("op")
-        if op not in _ALL_OPS:
+        if not isinstance(op, str) or op not in _ALL_OPS:
             raise ValueError(f"step {index} op is unsupported")
 
         if op in _BEGIN_OPS:
