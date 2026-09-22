@@ -40,6 +40,10 @@ def _has_explicit_non_regular_unix_type(member: zipfile.ZipInfo) -> bool:
     return file_type not in {0, stat.S_IFREG}
 
 
+def _file_identity(metadata: os.stat_result) -> tuple[int, int]:
+    return metadata.st_dev, metadata.st_ino
+
+
 def _read_bounded_bytes(path: Path, *, max_bytes: int, label: str) -> bytes:
     """Read one bounded regular-file snapshot without accepting path replacement."""
 
@@ -65,16 +69,13 @@ def _read_bounded_bytes(path: Path, *, max_bytes: int, label: str) -> bytes:
         opened = os.fstat(fd)
         if not stat.S_ISREG(opened.st_mode):
             raise ValueError(f"{label} opened object is not a regular file: {path}")
-        if (before.st_dev, before.st_ino) != (opened.st_dev, opened.st_ino):
+        if _file_identity(before) != _file_identity(opened):
             raise ValueError(f"{label} path changed while being opened: {path}")
         try:
             after = path.lstat()
         except OSError as exc:
             raise ValueError(f"{label} path changed while being opened: {path}") from exc
-        if not stat.S_ISREG(after.st_mode) or (
-            after.st_dev,
-            after.st_ino,
-        ) != (opened.st_dev, opened.st_ino):
+        if not stat.S_ISREG(after.st_mode) or _file_identity(after) != _file_identity(opened):
             raise ValueError(f"{label} path changed while being opened: {path}")
         with os.fdopen(fd, "rb", closefd=True) as source:
             fd = -1
@@ -88,15 +89,34 @@ def _read_bounded_bytes(path: Path, *, max_bytes: int, label: str) -> bytes:
     return data
 
 
-def _publish_file_no_replace(staging_path: Path, destination: Path) -> None:
-    """Atomically publish one closed staging file without replacing a destination."""
+def _publish_file_no_replace(
+    staging_path: Path,
+    destination: Path,
+    *,
+    expected: os.stat_result,
+) -> None:
+    """Publish exactly the validated staging inode without replacing a destination."""
 
     try:
-        os.link(staging_path, destination)
+        current = staging_path.lstat()
+    except OSError as exc:
+        raise ValueError("repro archive staging path changed before publication") from exc
+    if not stat.S_ISREG(current.st_mode) or _file_identity(current) != _file_identity(expected):
+        raise ValueError("repro archive staging path changed before publication")
+
+    try:
+        os.link(staging_path, destination, follow_symlinks=False)
     except FileExistsError:
         raise FileExistsError(
             f"repro archive destination already exists: {destination}"
         ) from None
+
+    try:
+        published = destination.lstat()
+    except OSError as exc:
+        raise ValueError("repro archive destination changed during publication") from exc
+    if not stat.S_ISREG(published.st_mode) or _file_identity(published) != _file_identity(expected):
+        raise ValueError("repro archive destination changed during publication")
 
 
 def _non_triggering_fault_spec(operation: str) -> FaultSpec:
@@ -162,30 +182,38 @@ def _export_repro_archive(
             suffix=".tmp",
             dir=archive_path.parent,
         )
-        os.close(staging_fd)
         staging_archive = Path(staging_name)
         try:
-            with zipfile.ZipFile(
-                staging_archive,
-                mode="w",
-                compression=zipfile.ZIP_STORED,
-                allowZip64=False,
-            ) as archive:
-                archive.writestr(_regular_zip_info("input.bin"), input_bytes)
-                archive.writestr(_regular_zip_info("manifest.json"), manifest)
+            with os.fdopen(staging_fd, "w+b", closefd=False) as staging_stream:
+                with zipfile.ZipFile(
+                    staging_stream,
+                    mode="w",
+                    compression=zipfile.ZIP_STORED,
+                    allowZip64=False,
+                ) as archive:
+                    archive.writestr(_regular_zip_info("input.bin"), input_bytes)
+                    archive.writestr(_regular_zip_info("manifest.json"), manifest)
+                staging_stream.flush()
 
-            if durable:
-                assert effective_file_sync_spec is not None
-                with staging_archive.open("r+b") as sink:
-                    FaultingFileSync(sink, effective_file_sync_spec).sync()
+                if durable:
+                    assert effective_file_sync_spec is not None
+                    FaultingFileSync(staging_stream, effective_file_sync_spec).sync()
 
-            _publish_file_no_replace(staging_archive, archive_path)
-
-            if directory_sync is not None:
-                directory_sync.sync(archive_path.parent)
+                expected = os.fstat(staging_fd)
+                if not stat.S_ISREG(expected.st_mode):
+                    raise ValueError("repro archive staging object is not a regular file")
+                _publish_file_no_replace(
+                    staging_archive,
+                    archive_path,
+                    expected=expected,
+                )
         finally:
-            if staging_archive.exists():
+            os.close(staging_fd)
+            if staging_archive.exists() or staging_archive.is_symlink():
                 staging_archive.unlink()
+
+        if directory_sync is not None:
+            directory_sync.sync(archive_path.parent)
 
     return archive_path
 
