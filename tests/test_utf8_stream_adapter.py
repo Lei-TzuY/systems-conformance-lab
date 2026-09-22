@@ -199,4 +199,6 @@ def test_chunk_pattern_changes_target_replay_identity() -> None:
         chunk_pattern=(1, 3, 2),
     ).as_command_target()
 
+    assert "--chunk-pattern" not in fixed.argv
+    assert "--chunk-pattern" in patterned.argv
     assert fixed.argv != patterned.argv
