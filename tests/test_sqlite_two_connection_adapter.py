@@ -315,6 +315,32 @@ def test_empty_query_still_enforces_result_byte_budget() -> None:
     assert result.stderr.text.strip() == "result_error: result exceeds max_result_bytes: 8"
 
 
+@pytest.mark.parametrize("op", ["try_execute", "try_query"])
+def test_try_operations_do_not_swallow_nonbusy_sqlite_errors(op: str) -> None:
+    case = _case(
+        setup=[],
+        steps=[
+            {
+                "connection": "a",
+                "op": op,
+                "sql": "SELECT value FROM missing_table",
+            }
+        ],
+    )
+
+    result = _execute(SQLiteTwoConnectionScenarioTarget(), case)
+
+    assert result.infrastructure_error is None
+    assert result.exit_code == 3
+    assert result.stdout.text == ""
+    assert result.stderr.text.strip() == "sqlite_scenario_error: SQLITE_ERROR"
+
+
+def test_invalid_journal_mode_is_rejected_before_spawn() -> None:
+    with pytest.raises(ValueError, match="journal_mode"):
+        SQLiteTwoConnectionScenarioTarget(journal_mode="memory")  # type: ignore[arg-type]
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [
