@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
-import shutil
 from dataclasses import dataclass
+from shutil import which
 from typing import Literal
 
 from .harness import CommandTarget
@@ -105,7 +105,7 @@ class UTF8NodeDecodeTarget:
             raise ValueError("chunk_size must be a positive integer")
         if not isinstance(self.node_executable, str) or not self.node_executable:
             raise ValueError("node_executable must be a non-empty string")
-        if shutil.which(self.node_executable) is None:
+        if which(self.node_executable) is None:
             raise RuntimeError(
                 f"Node runtime is required for UTF8NodeDecodeTarget: {self.node_executable}"
             )
