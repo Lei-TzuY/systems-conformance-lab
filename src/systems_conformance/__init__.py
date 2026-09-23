@@ -23,6 +23,8 @@ from .feedback_fuzz import (
 from .form_urlencoded_adapter import FormURLEncodedTarget
 from .form_urlencoded_node_adapter import FormURLEncodedNodeTarget
 from .fsync_fault import FaultingFileSync
+from .gzip_decompression_adapter import GzipDecompressionTarget
+from .gzip_decompression_node_adapter import GzipDecompressionNodeTarget
 from .fuzz import (
     FuzzCampaignResult,
     FuzzDiscoveryResult,
@@ -163,6 +165,8 @@ __all__ = [
     "FuzzCampaignResult",
     "FuzzDiscoveryResult",
     "FuzzFailure",
+    "GzipDecompressionNodeTarget",
+    "GzipDecompressionTarget",
     "IDNAHostnameTarget",
     "IDNANodeHostnameTarget",
     "ISOTimestampNodeTarget",
