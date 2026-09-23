@@ -14,11 +14,12 @@ A strict case-insensitive `data:` scheme gate runs before either native URL API.
 such as `http:`, `file:`, and `javascript:` therefore cannot escape the conformance
 case into network, filesystem, or script access.
 
-Each target has an independent data-URL byte ceiling. The worker stops consuming stdin
-after one byte beyond the configured limit and reports `data_url_too_large`. Since data
-URL percent decoding and Base64 decoding do not expand beyond the source URL payload,
-this also bounds decoded body materialization. The ceiling is capped at 1 MiB and is part
-of replay identity.
+Each target has an independent data-URL byte ceiling. Python probes at most one byte
+past the ceiling; Node rejects as soon as its stdin stream observes that the accumulated
+input exceeds the ceiling. Both report `data_url_too_large` before native URL parsing.
+Since data URL percent decoding and Base64 decoding do not expand beyond the source URL
+payload, the URL ceiling also bounds decoded body materialization. The ceiling is capped
+at 1 MiB and is part of replay identity.
 
 ## Runtime implementations
 
