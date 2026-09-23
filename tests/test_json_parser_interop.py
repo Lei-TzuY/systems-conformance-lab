@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import platform
 import shutil
+import subprocess
 import sys
 
 import pytest
@@ -14,6 +15,7 @@ from systems_conformance import (
     JSONParseTarget,
     run_failure_discovery_campaign,
 )
+from systems_conformance.json_parser_adapter import MAX_CONFIGURED_JSON_DOCUMENT_BYTES
 
 
 def _harness(*, max_document_bytes: int = 64 * 1024) -> DifferentialHarness:
@@ -118,6 +120,43 @@ def test_target_level_document_budget_is_fail_closed() -> None:
     }
 
 
+@pytest.mark.parametrize(
+    "target",
+    [
+        pytest.param(JSONParseTarget(max_document_bytes=4), id="python"),
+        pytest.param(JSONParseNodeTarget(max_document_bytes=4), id="node"),
+    ],
+)
+def test_oversize_document_rejects_without_waiting_for_eof(target: object) -> None:
+    command = target.as_command_target()  # type: ignore[union-attr]
+    process = subprocess.Popen(
+        command.argv,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        assert process.stdin is not None
+        process.stdin.write(b"null ")
+        process.stdin.flush()
+        process.wait(timeout=5.0)
+
+        assert process.stdout is not None
+        assert process.stderr is not None
+        assert _payload(process.stdout.read().decode()) == {
+            "error": "input_too_large",
+            "ok": False,
+        }
+        assert process.stderr.read() == b""
+        assert process.returncode == 0
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=5.0)
+        if process.stdin is not None:
+            process.stdin.close()
+
+
 def test_discovery_publishes_and_replays_numeric_precision_divergence(tmp_path) -> None:
     harness = _harness()
     corpus = (b'{"n":1}', b'{"n":9007199254740993}')
@@ -148,7 +187,10 @@ def test_discovery_publishes_and_replays_numeric_precision_divergence(tmp_path) 
     assert replay.bundle.metadata["domain"] == "json-parser"
 
 
-@pytest.mark.parametrize("budget", [-1, True, 1.5, "1024"])
+@pytest.mark.parametrize(
+    "budget",
+    [-1, MAX_CONFIGURED_JSON_DOCUMENT_BYTES + 1, True, 1.5, "1024"],
+)
 def test_targets_reject_invalid_document_budget(budget: object) -> None:
     expected = TypeError if isinstance(budget, (bool, float, str)) else ValueError
     with pytest.raises(expected):
