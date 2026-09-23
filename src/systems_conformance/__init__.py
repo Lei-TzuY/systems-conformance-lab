@@ -4,6 +4,8 @@ from .archive_retention import (
     ArchiveRetentionResult,
     enforce_repro_archive_retention,
 )
+from .base64_codec_adapter import Base64CodecTarget
+from .base64_codec_node_adapter import Base64CodecNodeTarget
 from .byte_fuzz import DeterministicByteMutations
 from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
@@ -134,6 +136,8 @@ __all__ = [
     "ArchiveReproReplay",
     "ArchiveRetentionEvidence",
     "ArchiveRetentionResult",
+    "Base64CodecNodeTarget",
+    "Base64CodecTarget",
     "CandidateBudgetExhausted",
     "CommandTarget",
     "ComparisonResult",
