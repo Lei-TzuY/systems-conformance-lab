@@ -18,6 +18,8 @@ from .feedback_fuzz import (
     FeedbackCorpusEntry,
     run_feedback_guided_campaign,
 )
+from .form_urlencoded_adapter import FormURLEncodedTarget
+from .form_urlencoded_node_adapter import FormURLEncodedNodeTarget
 from .fsync_fault import FaultingFileSync
 from .fuzz import (
     FuzzCampaignResult,
@@ -137,6 +139,8 @@ __all__ = [
     "FeatureBudgetExhausted",
     "FeedbackCampaignResult",
     "FeedbackCorpusEntry",
+    "FormURLEncodedNodeTarget",
+    "FormURLEncodedTarget",
     "FuzzCampaignResult",
     "FuzzDiscoveryResult",
     "FuzzFailure",

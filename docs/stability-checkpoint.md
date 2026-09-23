@@ -337,3 +337,28 @@ binds implementation/version and its Unicode 3.2 Nameprep table identity; Node b
 Node, ICU, and Unicode versions and verifies them before processing input. DNS resolver
 behavior, certificate matching, public-suffix policy, and browser origin/security rules
 remain outside this checkpoint.
+
+
+### form-urlencoded interoperability checkpoint
+
+The URL domain now crosses into ordered key-value serialization/parsing rather than only
+URL structure. Python urllib.parse and Node WHATWG URLSearchParams execute through
+separate real child processes above the unchanged generic execution, comparison,
+discovery, repro, and replay substrate.
+
+Encode requests use a binary ordered-pair frame so duplicate keys and ordering are
+preserved without confounding JSON parser behavior. Decode requests consume raw form
+body bytes, with strict UTF-8 transport validation kept separate from percent-decoded
+UTF-8 policy.
+
+Executable shared evidence covers plus/space handling, literal plus, UTF-8 percent
+encoding, duplicate keys, empty fields, malformed percent triplets, and blank values.
+Stable native differences remain evidence rather than being normalized away: tilde and
+asterisk serialization differ between Python quote_plus/urlencode and WHATWG
+URLSearchParams, while invalid percent-decoded UTF-8 is strict-rejected by Python and
+replacement-decoded by Node. Deterministic discovery publishes and replays both encode
+and decode witnesses.
+
+Mode and runtime versions remain target configuration and replay identity. Browser
+FormData/multipart behavior, URLSearchParams mutation/sort APIs, non-UTF-8 form
+encodings, and browser navigation/form-submission policy remain outside this checkpoint.
