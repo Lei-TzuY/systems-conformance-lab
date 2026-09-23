@@ -216,7 +216,7 @@ def _snapshot(state: URLState) -> dict[str, object]:
                 state.fragment,
             )
         ),
-        "pairs": state.pairs,
+        "pairs": list(state.pairs),
         "query": _serialize_pairs(state.pairs),
         "search": f"?{state.raw_query}" if state.raw_query else "",
     }
