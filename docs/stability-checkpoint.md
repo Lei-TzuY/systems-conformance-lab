@@ -637,10 +637,11 @@ evidence covers empty/single/multiple chunks, binary payloads, chunk extensions,
 hexadecimal size spelling, malformed sizes, LF-only framing, and independent raw-transfer
 and reconstructed-body budget boundaries.
 
-A real native policy difference remains visible for premature close. When a chunk
-declares five payload bytes but the server closes after three, Python reports an
-incomplete-read body failure while Node Fetch/Undici exposes the three received bytes as
-a successful response body. Deterministic discovery publishes and replays that mismatch.
+A real native termination-policy difference remains visible after a valid zero-sized
+terminal chunk: Python accepts connection close before the final empty trailer
+terminator, while Node Fetch/Undici reports a body-decode failure. Mid-payload premature
+close is rejected by both runtimes. Deterministic discovery publishes and replays the
+missing-terminal-CRLF mismatch.
 
 Transfer-body and observed-body ceilings plus Python implementation/version and
 Node/Undici identity participate in replay context. Request-body chunking, HTTP/2/3,
