@@ -362,3 +362,24 @@ and decode witnesses.
 Mode and runtime versions remain target configuration and replay identity. Browser
 FormData/multipart behavior, URLSearchParams mutation/sort APIs, non-UTF-8 form
 encodings, and browser navigation/form-submission policy remain outside this checkpoint.
+
+
+### Full-URL query canonicalization checkpoint
+
+The URL domain now composes parser and form-codec semantics in one real-process pipeline
+rather than testing those boundaries only in isolation. Python urllib.parse and Node
+WHATWG URL/URLSearchParams parse one absolute HTTP(S) URL, decode its query to ordered
+pairs, re-encode through native form policy, write the canonical query back into the URL,
+and serialize the complete result.
+
+Executable shared evidence covers space-to-plus canonicalization, duplicate ordering,
+blank fields, literal malformed percent triplets, raw Unicode query values, plus
+semantics, and empty-query removal. Native differences remain visible: tilde/asterisk
+encoding policy and invalid percent-decoded UTF-8 each produce stable product mismatches
+that deterministic discovery publishes and replay reproduces.
+
+Cases are restricted to the existing shared HTTP(S) parser subset so known host/path/port
+parser differences are not misattributed to query policy. Python and Node runtime
+identity remain verified replay context. Full URLSearchParams mutation/sort APIs, file
+and opaque URLs, browser origin/security, multipart forms, non-UTF-8 form encodings, and
+navigation behavior remain outside this checkpoint.

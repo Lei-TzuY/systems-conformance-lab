@@ -109,6 +109,8 @@ from .unicode_normalization_adapter import UnicodeNormalizationTarget
 from .unicode_normalization_node_adapter import UnicodeNodeNormalizationTarget
 from .url_node_adapter import URLNodeParseTarget
 from .url_parser_adapter import URLParseTarget
+from .url_query_canonicalization_adapter import URLQueryCanonicalizationTarget
+from .url_query_canonicalization_node_adapter import URLNodeQueryCanonicalizationTarget
 from .url_resolution_adapter import URLResolutionTarget
 from .url_resolution_node_adapter import URLNodeResolutionTarget
 from .utf8_node_adapter import UTF8NodeDecodeTarget
@@ -169,8 +171,10 @@ __all__ = [
     "SQLiteTwoConnectionScenarioTarget",
     "StreamCapture",
     "URLNodeParseTarget",
+    "URLNodeQueryCanonicalizationTarget",
     "URLNodeResolutionTarget",
     "URLParseTarget",
+    "URLQueryCanonicalizationTarget",
     "URLResolutionTarget",
     "UTF8DecodeTarget",
     "UTF8NodeDecodeTarget",
