@@ -67,6 +67,15 @@ def _payload(text: str) -> dict[str, object]:
             },
         ),
         (
+            b"https://example.com/?x=%2f",
+            {
+                "href": "https://example.com/?x=%2F",
+                "ok": True,
+                "pairs": [["x", "/"]],
+                "query": "x=%2F",
+            },
+        ),
+        (
             "https://example.com/?x=é".encode(),
             {
                 "href": "https://example.com/?x=%C3%A9",
@@ -88,6 +97,15 @@ def _payload(text: str) -> dict[str, object]:
             b"https://example.com/?",
             {
                 "href": "https://example.com/",
+                "ok": True,
+                "pairs": [],
+                "query": "",
+            },
+        ),
+        (
+            b"https://example.com/path#frag",
+            {
+                "href": "https://example.com/path#frag",
                 "ok": True,
                 "pairs": [],
                 "query": "",
@@ -168,8 +186,26 @@ def test_native_query_percent_encoding_policy_surfaces_product_mismatch() -> Non
     }
 
 
-def test_invalid_percent_decoded_utf8_surfaces_product_mismatch() -> None:
-    run = _harness().evaluate(b"https://example.com/?x=%FF")
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"https://example.com/?x=%FF",
+        b"https://example.com/?x=%E2%82",
+    ],
+)
+def test_additional_native_percent_encode_set_divergence_is_stable() -> None:
+    run = _harness().evaluate(b"https://example.com/?x=!*()~")
+
+    assert run.comparison.classification == "product_mismatch"
+    assert run.comparison.mismatches == ("stdout",)
+    assert run.signature is not None
+    assert run.signature.dimensions == ("stdout",)
+    assert _payload(run.candidate.stdout.text)["query"] == "x=%21*%28%29%7E"
+    assert _payload(run.oracle.stdout.text)["query"] == "x=%21%2A%28%29~"
+
+
+def test_invalid_percent_decoded_utf8_surfaces_product_mismatch(raw: bytes) -> None:
+    run = _harness().evaluate(raw)
 
     assert run.comparison.classification == "product_mismatch"
     assert run.comparison.mismatches == ("stdout",)
