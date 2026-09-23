@@ -539,3 +539,28 @@ The URL-byte ceiling plus Python implementation/version and Node/Undici identity
 participate in replay context. HTTP/file access, browser origin/CSP/navigation, Blob
 URLs, multipart parsing, MIME sniffing, charset transcoding, streaming bodies, and
 cryptographic integrity remain outside this checkpoint.
+
+
+### Bounded JSON parser interoperability checkpoint
+
+The conformance surface now includes a structured JSON parser domain through separate
+Python stdlib `json.loads` and Node `JSON.parse` child-process targets. Both targets
+apply strict UTF-8 decoding and a target-level document ceiling before parsing; the
+ceiling is capped at 1 MiB, and each worker rejects after reading at most one byte beyond
+its configured limit without waiting for stdin EOF.
+
+Successful values are projected into deterministic JSON records with recursively sorted
+object keys. Runtime value policy remains visible rather than being coerced into a fake
+common model: Python preserves arbitrary-size integers while Node rounds through
+IEEE-754 `Number`, producing a deterministic mismatch at
+`9007199254740993`. Python's non-standard `NaN` acceptance is also preserved as a
+parser-policy difference. Values that become non-finite after otherwise valid parsing,
+such as `1e400`, are reported explicitly as `non_finite_number` instead of being
+silently rewritten during result serialization.
+
+Python implementation/version, Node version, and the document ceiling participate in
+replay identity. Deterministic discovery publishes and replays the large-integer
+precision witness through the existing repro substrate. This checkpoint does not claim
+RFC 8259 canonicalization, schema validation, duplicate-key diagnostics, arbitrary
+precision parity, streaming JSON, JSON5, lossless source formatting, or performance
+results.
