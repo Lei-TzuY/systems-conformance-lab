@@ -88,6 +88,17 @@ def test_unicode_result_transport_is_ascii_canonicalized() -> None:
     assert "\\u96ea\\ud83d\\ude00" in run.candidate.stdout.text
 
 
+def test_unicode_object_key_order_matches_python_code_points() -> None:
+    run = _harness().evaluate('{"😀":1,"\ue000":2}'.encode())
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert run.candidate.stdout.text == run.oracle.stdout.text
+    assert run.candidate.stdout.text.index("\\ue000") < run.candidate.stdout.text.index(
+        "\\ud83d\\ude00"
+    )
+
+
 def test_large_integer_precision_surfaces_product_mismatch() -> None:
     run = _harness().evaluate(b'{"n":9007199254740993}')
 
