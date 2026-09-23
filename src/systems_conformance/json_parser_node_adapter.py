@@ -36,30 +36,45 @@ function compareUnicodeCodePoints(left, right) {
   return leftPoints.length - rightPoints.length;
 }
 
-function canonicalize(value) {
-  if (Array.isArray(value)) {
-    return value.map(canonicalize);
-  }
-  if (value !== null && typeof value === "object") {
-    const result = {};
-    for (const key of Object.keys(value).sort(compareUnicodeCodePoints)) {
-      result[key] = canonicalize(value[key]);
-    }
-    return result;
-  }
-  return value;
-}
-
-function stringifyAscii(value) {
-  return JSON.stringify(canonicalize(value)).replace(
+function quoteAscii(value) {
+  return JSON.stringify(value).replace(
     /[\u007f-\uffff]/g,
     (character) =>
       "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"),
   );
 }
 
+function stringifyCanonical(value) {
+  if (value === null) {
+    return "null";
+  }
+  if (typeof value === "string") {
+    return quoteAscii(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return "[" + value.map(stringifyCanonical).join(",") + "]";
+  }
+  if (typeof value === "object") {
+    return (
+      "{" +
+      Object.keys(value)
+        .sort(compareUnicodeCodePoints)
+        .map(
+          (key) =>
+            quoteAscii(key) + ":" + stringifyCanonical(value[key]),
+        )
+        .join(",") +
+      "}"
+    );
+  }
+  throw new TypeError("unsupported JSON result value");
+}
+
 function emit(value) {
-  process.stdout.write(stringifyAscii(value) + "\n");
+  process.stdout.write(stringifyCanonical(value) + "\n");
 }
 
 function hasNonFinite(value) {
