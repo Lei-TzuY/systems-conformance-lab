@@ -4,7 +4,7 @@ This phase adds a real cross-runtime structured-data parser boundary. Python's s
 
 ## Input and isolation contract
 
-Both targets consume exact stdin bytes and apply strict UTF-8 decoding before JSON parsing. Invalid UTF-8 is projected to the same bounded semantic rejection instead of relying on runtime-specific replacement decoding. Each adapter carries an immutable `max_document_bytes` value into the child process; the child rejects an oversized document before parsing. The harness still supplies its independent process timeout, stdin ceiling, per-stream capture ceiling, aggregate emitted-output ceiling, and process-tree cleanup.
+Both targets consume exact stdin bytes and apply strict UTF-8 decoding before JSON parsing. Invalid UTF-8 is projected to the same bounded semantic rejection instead of relying on runtime-specific replacement decoding. Each adapter carries an immutable `max_document_bytes` value into the child process, capped at 1 MiB. Each worker reads at most one byte beyond that ceiling and rejects an oversized document immediately, without requiring stdin EOF, before JSON parsing. The harness still supplies its independent process timeout, stdin ceiling, per-stream capture ceiling, aggregate emitted-output ceiling, and process-tree cleanup.
 
 No shell interpolation is used. Runtime identity and the document budget are process argv configuration, so the existing replay-context fingerprint binds them automatically.
 
