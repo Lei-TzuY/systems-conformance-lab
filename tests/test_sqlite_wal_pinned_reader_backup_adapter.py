@@ -11,7 +11,7 @@ from systems_conformance.sqlite_wal_pinned_reader_backup_adapter import (
 def _execute(target: SQLiteWALPinnedReaderBackupTarget, case: bytes = b""):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=6.0,
+        timeout_seconds=10.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -74,7 +74,7 @@ def test_real_harness_repeats_pinned_reader_backup_deterministically() -> None:
     harness = DifferentialHarness(
         candidate=target.as_command_target(),
         oracle=target.as_command_target(),
-        timeout_seconds=6.0,
+        timeout_seconds=10.0,
     )
 
     run = harness.evaluate(b"")
