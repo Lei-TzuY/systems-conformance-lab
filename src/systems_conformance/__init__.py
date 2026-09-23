@@ -117,6 +117,13 @@ from .url_resolution_adapter import URLResolutionTarget
 from .url_resolution_node_adapter import URLNodeResolutionTarget
 from .url_search_params_adapter import URLSearchParamsTarget
 from .url_search_params_node_adapter import URLSearchParamsNodeTarget
+from .url_search_params_reducer import (
+    URLSearchParamsOperation,
+    URLSearchParamsRequest,
+    encode_url_search_params_request,
+    parse_url_search_params_request,
+    url_search_params_reduction_candidates,
+)
 from .utf8_node_adapter import UTF8NodeDecodeTarget
 from .utf8_stream_adapter import UTF8DecodeTarget
 from .utf16_node_adapter import UTF16NodeDecodeTarget
@@ -183,6 +190,8 @@ __all__ = [
     "URLQueryCanonicalizationTarget",
     "URLResolutionTarget",
     "URLSearchParamsNodeTarget",
+    "URLSearchParamsOperation",
+    "URLSearchParamsRequest",
     "URLSearchParamsTarget",
     "UTF8DecodeTarget",
     "UTF8NodeDecodeTarget",
@@ -193,6 +202,7 @@ __all__ = [
     "compare_results",
     "discover_sqlite_two_connection_failure_to_archive",
     "discover_sqlite_two_connection_failure_to_repro",
+    "encode_url_search_params_request",
     "enforce_repro_archive_retention",
     "enforce_repro_retention",
     "export_durable_repro_archive",
@@ -202,6 +212,7 @@ __all__ = [
     "import_durable_repro_archive",
     "import_repro_archive",
     "load_repro_bundle",
+    "parse_url_search_params_request",
     "reduce_case",
     "reduce_failure_to_repro",
     "reduce_sqlite_query_failure_to_repro",
@@ -233,5 +244,6 @@ __all__ = [
     "sqlite_two_connection_setup_deletions",
     "sqlite_two_connection_step_count",
     "sqlite_two_connection_step_deletions",
+    "url_search_params_reduction_candidates",
     "write_repro_bundle",
 ]
