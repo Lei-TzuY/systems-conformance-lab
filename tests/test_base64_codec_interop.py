@@ -207,31 +207,102 @@ def test_decode_discovery_publishes_and_replays_missing_padding_divergence(tmp_p
     assert replay.bundle.metadata["domain"] == "base64-decode"
 
 
-def test_python_runtime_identity_mismatch_rejects_before_input_processing() -> None:
-    target = CommandTarget(
-        (
-            sys.executable,
-            "-m",
-            "systems_conformance._base64_codec_worker",
-            "--mode",
-            "decode",
-            "--alphabet",
-            "base64",
-            "--python-implementation",
-            sys.implementation.name,
-            "--python-version",
-            platform.python_version() + "-different",
-        )
+@pytest.mark.parametrize("mode", ["ENCODE", "parse", "", "serialize"])
+def test_targets_reject_unknown_mode(mode: str) -> None:
+    with pytest.raises(ValueError, match="mode"):
+        Base64CodecTarget(mode=mode)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="mode"):
+        Base64CodecNodeTarget(mode=mode)  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("alphabet", ["urlsafe", "BASE64", "", "hex"])
+def test_targets_reject_unknown_alphabet(alphabet: str) -> None:
+    with pytest.raises(ValueError, match="alphabet"):
+        Base64CodecTarget(alphabet=alphabet)  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="alphabet"):
+        Base64CodecNodeTarget(alphabet=alphabet)  # type: ignore[arg-type]
+
+
+def _execute_command(target: CommandTarget, case: bytes) -> object:
+    return target.execute(
+        case,
+        timeout_seconds=5.0,
+        max_output_bytes=4096,
+        max_total_output_bytes=8192,
     )
-    oracle = Base64CodecTarget(mode="decode").as_command_target()
-    run = DifferentialHarness(candidate=target, oracle=oracle, timeout_seconds=5.0).evaluate(
-        b"Zm9v"
+
+
+def test_python_runtime_identity_is_bound_and_verified_before_input() -> None:
+    target = Base64CodecTarget(mode="decode", alphabet="base64")
+    implementation, python_version = target.runtime_identity
+    command = target.as_command_target()
+
+    assert implementation == sys.implementation.name
+    assert python_version == platform.python_version()
+    assert command.argv[-4:] == (
+        "--python-implementation",
+        implementation,
+        "--python-version",
+        python_version,
     )
 
-    assert run.comparison.classification == "infrastructure_failure"
-    assert run.candidate.exit_code == 3
-    assert "base64_codec_runtime_identity_mismatch" in run.candidate.stderr.text
+    argv = list(command.argv)
+    argv[argv.index("--python-version") + 1] = "__drift__"
+    result = _execute_command(CommandTarget(tuple(argv)), b"Zm9v")
+
+    assert result.exit_code == 3
+    assert result.stdout.text == ""
+    assert result.stderr.text.strip() == "base64_codec_runtime_identity_mismatch"
 
 
-def test_node_runtime_is_available_for_real_process_evidence() -> None:
+def test_node_runtime_identity_is_bound_and_verified_before_input() -> None:
+    target = Base64CodecNodeTarget(mode="decode", alphabet="base64")
+    (node_version,) = target.runtime_identity
+    command = target.as_command_target()
+    expected = f"const EXPECTED_NODE_VERSION = {json.dumps(node_version)};"
+
+    assert node_version.startswith("v")
+    assert expected in command.argv[2]
+
+    drifted_script = command.argv[2].replace(
+        expected,
+        'const EXPECTED_NODE_VERSION = "__drift__";',
+        1,
+    )
+    result = _execute_command(
+        CommandTarget((target.node_executable, "-e", drifted_script)),
+        b"Zm9v",
+    )
+
+    assert result.exit_code == 3
+    assert result.stdout.text == ""
+    assert result.stderr.text.strip() == "base64_codec_runtime_identity_mismatch"
+
+
+def test_mode_alphabet_and_runtime_identity_change_replay_context() -> None:
+    standard_encode = Base64CodecTarget(mode="encode", alphabet="base64").as_command_target()
+    standard_decode = Base64CodecTarget(mode="decode", alphabet="base64").as_command_target()
+    url_encode = Base64CodecTarget(mode="encode", alphabet="base64url").as_command_target()
+    argv = list(standard_encode.argv)
+    argv[argv.index("--python-version") + 1] = "__different_python__"
+    drifted = CommandTarget(tuple(argv))
+
+    baseline = DifferentialHarness(
+        candidate=standard_encode,
+        oracle=standard_encode,
+    ).replay_context_sha256
+
+    for changed in (standard_decode, url_encode, drifted):
+        assert baseline != DifferentialHarness(
+            candidate=changed,
+            oracle=changed,
+        ).replay_context_sha256
+
+
+def test_node_target_requires_available_runtime() -> None:
     assert shutil.which("node") is not None
+
+    with pytest.raises(ValueError, match="node_executable"):
+        Base64CodecNodeTarget(node_executable="")
+    with pytest.raises(RuntimeError, match="Node runtime is required"):
+        Base64CodecNodeTarget(node_executable="__missing_conformance_node__")
