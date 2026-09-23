@@ -259,3 +259,21 @@ This closes a reproducibility gap left by the initial normalization interoperabi
 slice: a runtime Unicode-table upgrade can no longer be mistaken for the same replay
 context merely because argv, cwd, environment, and execution ceilings are unchanged.
 The generic repro schema and harness remain untouched.
+
+
+### UTF-16 cross-runtime streaming checkpoint
+
+The Unicode domain now spans a second wire encoding rather than only adding semantic
+vectors inside UTF-8 or normalization. Python and Node decode explicit UTF-16LE/BE raw
+stdin through separate child processes while the generic execution/comparison/fuzz
+substrate remains unchanged.
+
+Executable evidence crosses byte-order, one-shot/incremental execution, chunk widths
+that split code units and surrogate pairs, BOM preservation, strict malformed/truncated
+surrogate rejection, replacement semantics, and finite deterministic byte mutation.
+Byte order and streaming policy remain target configuration and therefore participate in
+replay identity.
+
+This checkpoint deliberately stops at explicit UTF-16LE/BE decoding. BOM-driven endian
+selection, UTF-32, grapheme segmentation, collation, and locale services remain distinct
+future interoperability surfaces.
