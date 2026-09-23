@@ -60,11 +60,12 @@ The shared surface covers:
 - exact and over-limit transfer-body budgets;
 - exact and over-limit reconstructed-body budgets.
 
-Native premature-close policy remains visible. For a chunk declaring five bytes but a
-connection that closes after three payload bytes, Python raises an incomplete-read
-failure while Node Fetch/Undici exposes the three received bytes as a successful body.
-A deterministic discovery campaign publishes that product mismatch through the generic
-repro path, and replay must reproduce the same stable failure signature.
+Native termination policy remains visible. Python accepts a response that sends a valid
+zero-sized terminal chunk but closes before the final empty trailer terminator; Node
+Fetch/Undici rejects the same body as incomplete chunk framing. A chunk that closes in
+the middle of its declared payload is rejected by both runtimes. A deterministic
+discovery campaign publishes the missing-terminal-CRLF mismatch through the generic repro
+path, and replay must reproduce the same stable failure signature.
 
 ## Scope boundary
 
