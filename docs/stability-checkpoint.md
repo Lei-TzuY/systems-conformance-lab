@@ -457,4 +457,4 @@ configuration. The generic runner, comparator, discovery, repro, and replay laye
 unchanged. MIME/PEM wrapping, streaming transforms, browser atob/btoa DOMString policy,
 data URLs, and cryptographic integrity/canonical-signature rules remain separate future
 surfaces.
-\n
+
