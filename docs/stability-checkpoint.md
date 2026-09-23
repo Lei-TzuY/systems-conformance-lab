@@ -458,3 +458,28 @@ unchanged. MIME/PEM wrapping, streaming transforms, browser atob/btoa DOMString 
 data URLs, and cryptographic integrity/canonical-signature rules remain separate future
 surfaces.
 
+
+
+
+### ISO timestamp parsing interoperability checkpoint
+
+The conformance surface now includes explicit-offset timestamp parsing as an independent
+structured-data domain. Python `datetime.fromisoformat` and Node `Date.parse` execute
+through separate real child processes above the unchanged runner, differential
+comparison, discovery, repro, and replay substrate.
+
+The adapter contract requires ASCII input with an explicit UTC marker or numeric offset,
+so host-local timezone policy cannot leak into evidence. Successful values are projected
+to signed Unix epoch milliseconds plus a millisecond-resolution UTC ISO string. Shared
+evidence covers `Z`, compact and colonized offsets, valid leap days, minute precision,
+fractional seconds, and negative Unix time.
+
+Native parser policy remains visible. Node accepts `24:00:00Z` and rolls it into the
+next day, and normalizes selected out-of-range calendar days that Python rejects; Python
+accepts offsets containing seconds that Node rejects. Deterministic discovery publishes
+and replays the 24-hour rollover witness under the existing stable failure identity.
+
+Python implementation/version and Node/V8 versions are verified runtime configuration
+and replay identity. This checkpoint does not claim complete RFC 3339 equivalence,
+locale parsing, timezone-database or DST semantics, leap seconds, duration arithmetic,
+or sub-millisecond cross-runtime identity.
