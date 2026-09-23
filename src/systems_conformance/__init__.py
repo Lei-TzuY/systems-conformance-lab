@@ -23,8 +23,6 @@ from .feedback_fuzz import (
 from .form_urlencoded_adapter import FormURLEncodedTarget
 from .form_urlencoded_node_adapter import FormURLEncodedNodeTarget
 from .fsync_fault import FaultingFileSync
-from .gzip_decompression_adapter import GzipDecompressionTarget
-from .gzip_decompression_node_adapter import GzipDecompressionNodeTarget
 from .fuzz import (
     FuzzCampaignResult,
     FuzzDiscoveryResult,
@@ -32,6 +30,8 @@ from .fuzz import (
     run_failure_discovery_campaign,
     run_fuzz_campaign,
 )
+from .gzip_decompression_adapter import GzipDecompressionTarget
+from .gzip_decompression_node_adapter import GzipDecompressionNodeTarget
 from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproReplay
 from .idna_hostname_adapter import IDNAHostnameTarget
 from .idna_hostname_node_adapter import IDNANodeHostnameTarget
