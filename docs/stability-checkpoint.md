@@ -297,3 +297,23 @@ stdin consumption so parser-runtime upgrades change replay identity instead of s
 reusing the same context. This checkpoint deliberately does not generalize all WHATWG
 URL behavior, IDNA/UTS #46, relative-base resolution, file URLs, or browser security
 semantics.
+
+
+### HTTP relative-resolution interoperability checkpoint
+
+The URL domain now moves beyond parsing one absolute input into a two-input resolution
+boundary. Python urllib.parse.urljoin/urlsplit and Node WHATWG URL consume the same
+binary-framed base/reference request through separate real processes while the generic
+runner, comparison, discovery, repro, and replay layers remain unchanged.
+
+Executable evidence covers parent/same-directory, query-only, fragment-only,
+network-path, and absolute references. The adapters also preserve native divergence
+instead of normalizing it away: WHATWG special-URL backslash handling and empty-reference
+fragment behavior surface as stable product mismatches. A deterministic discovery
+schedule publishes and replays a real backslash-resolution witness.
+
+The request protocol itself is bounded by the harness input ceiling and uses a four-byte
+base-length frame so resolution evidence is not confounded by JSON parser differences.
+Python and Node runtime versions remain verified replay identity. IDNA/UTS #46, file and
+opaque URLs, browser origin policy, form encoding, and percent-encoding normalization
+remain separate future surfaces.
