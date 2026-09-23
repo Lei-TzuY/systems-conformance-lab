@@ -621,3 +621,30 @@ This checkpoint does not expose arbitrary destinations and does not claim HTTP/2
 HTTP/3, TLS, redirects, proxies, cookies, caching, transfer-encoding equivalence,
 brotli/deflate semantics, browser Fetch behavior, streaming backpressure equivalence, or
 performance results.
+
+
+
+### HTTP/1.1 chunked-transfer interoperability checkpoint
+
+The conformance surface now includes response-side HTTP/1.1 transfer framing through
+target-owned loopback servers. Cases contain only raw chunked transfer-body bytes;
+status, headers, host, port, and URL are fixed by each target, so fuzz inputs cannot
+select an external destination or inject arbitrary response headers.
+
+Python `urllib.request.urlopen` and Node built-in `fetch` observe the same raw
+Transfer-Encoding: chunked response emitted by one-shot socket servers. Shared executable
+evidence covers empty/single/multiple chunks, binary payloads, chunk extensions, trailers,
+hexadecimal size spelling, malformed sizes, LF-only framing, and independent raw-transfer
+and reconstructed-body budget boundaries.
+
+A real native termination-policy difference remains visible after a valid zero-sized
+terminal chunk: Python accepts connection close before the final empty trailer
+terminator, while Node Fetch/Undici reports a body-decode failure. Mid-payload premature
+close is rejected by both runtimes. Deterministic discovery publishes and replays the
+missing-terminal-CRLF mismatch.
+
+Transfer-body and observed-body ceilings plus Python implementation/version and
+Node/Undici identity participate in replay context. Request-body chunking, HTTP/2/3,
+TLS, redirects, proxies, cookies, caching, Content-Encoding interaction, trailer API
+parity, request-smuggling analysis, streaming backpressure equivalence, and performance
+claims remain outside this checkpoint.
