@@ -648,3 +648,31 @@ Node/Undici identity participate in replay context. Request-body chunking, HTTP/
 TLS, redirects, proxies, cookies, caching, Content-Encoding interaction, trailer API
 parity, request-smuggling analysis, streaming backpressure equivalence, and performance
 claims remain outside this checkpoint.
+
+
+
+### HTTP chunked plus Content-Encoding pipeline checkpoint
+
+The loopback HTTP surface now composes transfer framing and content decoding in one native
+client pipeline. Each target-owned raw server emits fixed HTTP/1.1 response headers with
+`Transfer-Encoding: chunked` and an optional `Content-Encoding: gzip`; the case can
+control only the encoding mode and exact bytes after the header terminator.
+
+Identity responses prove shared chunk reconstruction. Under gzip, both clients first remove
+chunk framing, after which their established content policy diverges: Python urllib exposes
+the reconstructed gzip wire bytes while Node Fetch/Undici automatically exposes the
+decompressed payload. Transfer-Encoding and Content-Encoding remain visible to both
+clients, and Content-Length is absent under chunked transfer.
+
+Raw transfer-body and observed-body ceilings are independent replay-bound configuration.
+Node streams and cancels decoded output when the observed ceiling is crossed, preserving a
+hard bound even when a compact chunked gzip entity expands substantially after both layers
+of processing. Python implementation/version and Node/Undici/zlib versions remain runtime
+identity.
+
+Executable evidence includes shared identity bodies, gzip payloads split across multiple
+chunks, malformed gzip after valid dechunking, transfer/observed budget boundaries, bounded
+gzip expansion, and deterministic discovery -> repro -> replay of the real cross-layer
+auto-decoding mismatch. Request-side chunking, HTTP/2/3, TLS, redirects, proxies, caching,
+brotli/deflate, trailer API parity, request-smuggling analysis, browser behavior, and
+performance remain outside this checkpoint.

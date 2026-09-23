@@ -35,6 +35,8 @@ from .fuzz import (
 from .gzip_decompression_adapter import GzipDecompressionTarget
 from .gzip_decompression_node_adapter import GzipDecompressionNodeTarget
 from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproReplay
+from .http_chunked_content_encoding_adapter import HTTPChunkedContentEncodingTarget
+from .http_chunked_content_encoding_node_adapter import HTTPChunkedContentEncodingNodeTarget
 from .http_chunked_transfer_adapter import HTTPChunkedTransferTarget
 from .http_chunked_transfer_node_adapter import HTTPChunkedTransferNodeTarget
 from .http_content_encoding_adapter import HTTPContentEncodingTarget
@@ -179,6 +181,8 @@ __all__ = [
     "FuzzFailure",
     "GzipDecompressionNodeTarget",
     "GzipDecompressionTarget",
+    "HTTPChunkedContentEncodingNodeTarget",
+    "HTTPChunkedContentEncodingTarget",
     "HTTPChunkedTransferNodeTarget",
     "HTTPChunkedTransferTarget",
     "HTTPContentEncodingNodeTarget",
