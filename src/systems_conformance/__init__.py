@@ -39,6 +39,8 @@ from .idna_hostname_adapter import IDNAHostnameTarget
 from .idna_hostname_node_adapter import IDNANodeHostnameTarget
 from .iso_timestamp_adapter import ISOTimestampTarget
 from .iso_timestamp_node_adapter import ISOTimestampNodeTarget
+from .json_parser_adapter import JSONParseTarget
+from .json_parser_node_adapter import JSONParseNodeTarget
 from .model import ExecutionResult, StreamCapture
 from .reducer import CandidateBudgetExhausted, ReductionResult, reduce_case
 from .replace_fault import FaultingAtomicReplace
@@ -175,6 +177,8 @@ __all__ = [
     "IDNANodeHostnameTarget",
     "ISOTimestampNodeTarget",
     "ISOTimestampTarget",
+    "JSONParseNodeTarget",
+    "JSONParseTarget",
     "LoadedReproBundle",
     "ReducedFailureRepro",
     "ReductionResult",
