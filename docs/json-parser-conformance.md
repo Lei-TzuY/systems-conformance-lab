@@ -10,7 +10,7 @@ No shell interpolation is used. Runtime identity and the document budget are pro
 
 ## Semantic result surface
 
-Successful parses emit a deterministic JSON record of the form `{"ok":true,"value":...}`. Object keys are recursively ordered before Node serialization and Python uses sorted-key serialization, keeping ordinary shared-subset results stable. Parse, UTF-8, input-budget, and Python non-finite-number rejections use bounded error records.
+Successful parses emit a deterministic ASCII JSON record of the form `{"ok":true,"value":...}`. Object keys are recursively ordered, and both targets serialize non-ASCII UTF-16 code units as lowercase `\\uXXXX` escapes, keeping ordinary shared-subset values byte-stable across runtimes. Parse, UTF-8, input-budget, non-finite-number, and result-projection rejections use bounded error records.
 
 The adapter deliberately does not coerce runtime number semantics into a common artificial model. In particular, Python preserves arbitrary-size JSON integers while Node represents JSON numbers as IEEE-754 `Number`. The document `{"n":9007199254740993}` therefore provides a deterministic product-mismatch witness: Python preserves `9007199254740993`, while Node rounds it to `9007199254740992`. Python's stdlib parser also accepts non-standard `NaN` by default; the worker recognizes the resulting non-finite value and reports it explicitly, while Node rejects the token during parsing. These are product-policy differences, not infrastructure failures.
 
