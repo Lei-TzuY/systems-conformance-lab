@@ -45,11 +45,8 @@ def _decode_request(raw: bytes) -> tuple[str, str]:
 
     base_raw = raw[4 : 4 + base_length]
     reference_raw = raw[4 + base_length :]
-    try:
-        base = base_raw.decode("utf-8", errors="strict")
-        reference = reference_raw.decode("utf-8", errors="strict")
-    except UnicodeDecodeError:
-        raise
+    base = base_raw.decode("utf-8", errors="strict")
+    reference = reference_raw.decode("utf-8", errors="strict")
     return base, reference
 
 
