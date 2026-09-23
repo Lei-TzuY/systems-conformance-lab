@@ -4,7 +4,9 @@
 Python/Node JSON parser interoperability target. It parses only strict UTF-8 and
 standards-compliant JSON, then emits complete JSON documents that are strictly smaller
 than the input. Malformed UTF-8, malformed JSON, and non-standard constants such as
-`NaN` fail closed instead of being repaired by reducer infrastructure.
+`NaN` fail closed instead of being repaired by reducer infrastructure. Structural nesting
+beyond 256 levels is rejected before any candidate is emitted, keeping the recursive
+candidate walk below its explicit safety boundary rather than leaking `RecursionError`.
 
 Candidate order is stable: canonical whitespace/key serialization first when it is a
 strict reduction, followed by object-member deletion, key shrinking, recursive value
