@@ -105,6 +105,8 @@ from .unicode_normalization_adapter import UnicodeNormalizationTarget
 from .unicode_normalization_node_adapter import UnicodeNodeNormalizationTarget
 from .utf8_node_adapter import UTF8NodeDecodeTarget
 from .utf8_stream_adapter import UTF8DecodeTarget
+from .utf16_node_adapter import UTF16NodeDecodeTarget
+from .utf16_stream_adapter import UTF16DecodeTarget
 from .write_fault import FaultingBinaryWriter
 
 __all__ = [
@@ -156,6 +158,8 @@ __all__ = [
     "StreamCapture",
     "UTF8DecodeTarget",
     "UTF8NodeDecodeTarget",
+    "UTF16DecodeTarget",
+    "UTF16NodeDecodeTarget",
     "UnicodeNodeNormalizationTarget",
     "UnicodeNormalizationTarget",
     "compare_results",
