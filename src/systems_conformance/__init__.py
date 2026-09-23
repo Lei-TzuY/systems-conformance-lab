@@ -42,6 +42,8 @@ from .iso_timestamp_node_adapter import ISOTimestampNodeTarget
 from .json_parser_adapter import JSONParseTarget
 from .json_parser_node_adapter import JSONParseNodeTarget
 from .model import ExecutionResult, StreamCapture
+from .multipart_form_data_adapter import MultipartFormDataTarget
+from .multipart_form_data_node_adapter import MultipartFormDataNodeTarget
 from .reducer import CandidateBudgetExhausted, ReductionResult, reduce_case
 from .replace_fault import FaultingAtomicReplace
 from .repro import LoadedReproBundle, ReproBundle, load_repro_bundle, write_repro_bundle
@@ -180,6 +182,8 @@ __all__ = [
     "JSONParseNodeTarget",
     "JSONParseTarget",
     "LoadedReproBundle",
+    "MultipartFormDataNodeTarget",
+    "MultipartFormDataTarget",
     "ReducedFailureRepro",
     "ReductionResult",
     "ReproBundle",
