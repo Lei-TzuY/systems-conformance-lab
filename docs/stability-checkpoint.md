@@ -277,3 +277,23 @@ replay identity.
 This checkpoint deliberately stops at explicit UTF-16LE/BE decoding. BOM-driven endian
 selection, UTF-32, grapheme segmentation, collation, and locale services remain distinct
 future interoperability surfaces.
+
+
+### HTTP URL parser interoperability checkpoint
+
+The repository now exercises a third semantic domain: structured URL parsing. Python
+urllib.parse and Node 22 WHATWG URL execute as separate real-process targets above the
+unchanged runner, differential comparison, discovery, repro, and replay substrate.
+
+Executable evidence proves a shared absolute HTTP/HTTPS subset and also preserves native
+parser behavior strongly enough to surface stable policy differences: WHATWG dot-segment
+removal, default-port elision, and special-URL backslash handling differ from
+urllib.parse. A deterministic discovery schedule captures one such product mismatch,
+publishes the exact witness as a context-bound repro, and replay preserves its stable
+failure identity.
+
+Python implementation/version and Node process.version are bound and verified before
+stdin consumption so parser-runtime upgrades change replay identity instead of silently
+reusing the same context. This checkpoint deliberately does not generalize all WHATWG
+URL behavior, IDNA/UTS #46, relative-base resolution, file URLs, or browser security
+semantics.
