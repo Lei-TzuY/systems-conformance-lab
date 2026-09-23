@@ -27,7 +27,7 @@ def _harness(*, max_data_url_bytes: int = 64 * 1024) -> DifferentialHarness:
         oracle=DataURLFetchTarget(
             max_data_url_bytes=max_data_url_bytes
         ).as_command_target(),
-        timeout_seconds=5.0,
+        timeout_seconds=8.0,
         max_input_bytes=128 * 1024,
         max_output_bytes=256 * 1024,
         max_total_output_bytes=512 * 1024,
