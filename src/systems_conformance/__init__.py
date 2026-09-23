@@ -107,6 +107,8 @@ from .sqlite_two_connection_triage import (
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
 from .unicode_normalization_adapter import UnicodeNormalizationTarget
 from .unicode_normalization_node_adapter import UnicodeNodeNormalizationTarget
+from .url_live_search_params_adapter import URLLiveSearchParamsTarget
+from .url_live_search_params_node_adapter import URLLiveSearchParamsNodeTarget
 from .url_node_adapter import URLNodeParseTarget
 from .url_parser_adapter import URLParseTarget
 from .url_query_canonicalization_adapter import URLQueryCanonicalizationTarget
@@ -172,6 +174,8 @@ __all__ = [
     "SQLiteTwoConnectionScenarioMutations",
     "SQLiteTwoConnectionScenarioTarget",
     "StreamCapture",
+    "URLLiveSearchParamsNodeTarget",
+    "URLLiveSearchParamsTarget",
     "URLNodeParseTarget",
     "URLNodeQueryCanonicalizationTarget",
     "URLNodeResolutionTarget",
