@@ -99,6 +99,15 @@ def test_unicode_object_key_order_matches_python_code_points() -> None:
     )
 
 
+def test_integer_like_object_keys_keep_lexicographic_canonical_order() -> None:
+    run = _harness().evaluate(b'{"2":"two","10":"ten"}')
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert run.candidate.stdout.text == run.oracle.stdout.text
+    assert run.candidate.stdout.text.index('"10"') < run.candidate.stdout.text.index('"2"')
+
+
 def test_large_integer_precision_surfaces_product_mismatch() -> None:
     run = _harness().evaluate(b'{"n":9007199254740993}')
 
