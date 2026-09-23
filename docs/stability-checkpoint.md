@@ -404,3 +404,35 @@ target configuration and replay context. The generic runner, comparator, discove
 repro, and replay layers remain unchanged. Browser-live URL coupling, iterator mutation,
 non-UTF-8 forms, multipart submission, and broader navigation/security policy remain
 outside this checkpoint.
+
+
+### Live URL/searchParams coupling checkpoint
+
+The URL phase now composes URL structure and stateful query mutation through a live
+cross-layer boundary. One bounded binary request carries an absolute HTTP(S) URL plus
+append/set/delete/sort and direct-search-replacement operations. Separate real-process
+targets then emit a state snapshot after every operation, including the serialized URL,
+the URL search string, ordered parameter pairs, and native form serialization.
+
+The Node target uses one WHATWG `URL` object and retains its original live
+`url.searchParams` view for the entire program. This makes both synchronization
+directions executable: mutating the params object immediately rewrites the URL query,
+while assigning `url.search` immediately refreshes that already-referenced params view.
+The Python target is deliberately documented as a composed model, not as a claim that
+the Python standard library exposes a native WHATWG live object: it combines
+`urllib.parse` URL state, duplicate-preserving ordered pairs, and native form encoding.
+
+Executable evidence covers duplicate semantics across URL updates, raw `%20` search
+replacement without premature URL canonicalization, later params mutation that
+canonicalizes the full query, stable sorting, deletion, and fragment preservation.
+Native form-encoding policy is not normalized away: a tilde/asterisk append propagates
+the existing Python-vs-WHATWG serialization difference into `search` and the complete
+`href`, and deterministic discovery publishes and replays that cross-layer witness.
+
+URL-byte, operation-count, and field-byte ceilings plus Python/Node runtime identity are
+immutable target configuration and replay context. The generic runner, comparator,
+discovery, repro, and replay layers remain unchanged. Cases stay within the established
+shared HTTP(S) parser subset so parser-policy differences are not misattributed to live
+coupling. Iterator mutation during traversal, two-argument delete/has extensions,
+file/opaque URLs, browser origin/security state, navigation/submission, multipart forms,
+and non-UTF-8 form encodings remain outside this checkpoint.
