@@ -6,12 +6,12 @@ import platform
 import re
 import sys
 from collections.abc import Sequence
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 _EXPLICIT_TIMEZONE = re.compile(
     r"(?:Z|[+-]\d{2}(?::?\d{2})?(?::?\d{2}(?:[.,]\d+)?)?)$"
 )
-_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -48,7 +48,7 @@ def _has_explicit_timezone(text: str) -> bool:
 
 
 def _epoch_milliseconds(value: datetime) -> int:
-    utc_value = value.astimezone(timezone.utc)
+    utc_value = value.astimezone(UTC)
     delta = utc_value - _EPOCH
     return (
         delta.days * 86_400_000
@@ -58,7 +58,7 @@ def _epoch_milliseconds(value: datetime) -> int:
 
 
 def _utc_iso_milliseconds(value: datetime) -> str:
-    utc_value = value.astimezone(timezone.utc)
+    utc_value = value.astimezone(UTC)
     milliseconds = utc_value.microsecond // 1000
     return (
         f"{utc_value.year:04d}-{utc_value.month:02d}-{utc_value.day:02d}"
