@@ -85,8 +85,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         _emit({"error": "json_parse_error", "ok": False})
         return 0
 
-    if _has_non_finite(value):
-        _emit({"error": "non_finite_number", "ok": False})
+    try:
+        if _has_non_finite(value):
+            _emit({"error": "non_finite_number", "ok": False})
+            return 0
+    except RecursionError:
+        _emit({"error": "json_result_error", "ok": False})
         return 0
 
     try:
