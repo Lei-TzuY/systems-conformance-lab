@@ -41,3 +41,22 @@ comparison, collation, grapheme segmentation, regex equivalence, identifier secu
 or normalization stability for implementation-specific/unassigned code points. It also
 does not add normalization policy to the generic harness. Unicode semantics remain in
 domain adapters above the stable process, comparison, fuzz, and replay substrate.
+
+
+## Runtime semantic identity
+
+Normalization results depend on runtime Unicode data rather than argv alone. The
+normalization targets therefore bind their semantic runtime identity into process
+configuration so the existing replay-context fingerprint can detect version drift.
+
+The Python target captures the Python implementation, exact runtime version, and
+`unicodedata.unidata_version`; its worker verifies all three before reading case bytes.
+The Node target probes the selected executable through the shared bounded process runner,
+captures Node, ICU, and Unicode versions, embeds them in the target script, and verifies
+them again before reading case bytes. Probe failure, malformed identity output, and
+execution under a different runtime identity fail closed.
+
+This deliberately makes same-context replay conservative across runtime upgrades.
+Callers performing an intentional portability experiment may still use the existing
+explicit replay-context override, but an upgrade is no longer silently treated as the
+same semantic environment.
