@@ -110,6 +110,17 @@ def test_python_nonstandard_nan_acceptance_surfaces_product_mismatch() -> None:
     }
 
 
+def test_overflowing_json_number_is_reported_without_null_projection() -> None:
+    run = _harness().evaluate(b"1e400")
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert _payload(run.candidate.stdout.text) == {
+        "error": "non_finite_number",
+        "ok": False,
+    }
+
+
 def test_target_level_document_budget_is_fail_closed() -> None:
     run = _harness(max_document_bytes=4).evaluate(b"null ")
 
