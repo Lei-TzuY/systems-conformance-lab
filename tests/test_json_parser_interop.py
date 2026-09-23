@@ -79,6 +79,15 @@ def test_invalid_utf8_rejects_before_json_parser(raw: bytes) -> None:
     }
 
 
+def test_unicode_result_transport_is_ascii_canonicalized() -> None:
+    run = _harness().evaluate('{"text":"雪😀"}'.encode())
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert run.candidate.stdout.text == run.oracle.stdout.text
+    assert "\\u96ea\\ud83d\\ude00" in run.candidate.stdout.text
+
+
 def test_large_integer_precision_surfaces_product_mismatch() -> None:
     run = _harness().evaluate(b'{"n":9007199254740993}')
 
