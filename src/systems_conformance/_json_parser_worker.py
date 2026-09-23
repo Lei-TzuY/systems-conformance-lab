@@ -7,12 +7,30 @@ import platform
 import sys
 from collections.abc import Sequence
 
+DEFAULT_MAX_JSON_DOCUMENT_BYTES = 64 * 1024
+MAX_CONFIGURED_JSON_DOCUMENT_BYTES = 1024 * 1024
+
+
+def _bounded_document_bytes(value: str) -> int:
+    parsed = int(value)
+    if parsed < 0 or parsed > MAX_CONFIGURED_JSON_DOCUMENT_BYTES:
+        raise argparse.ArgumentTypeError(
+            "max document bytes must be between 0 and "
+            f"{MAX_CONFIGURED_JSON_DOCUMENT_BYTES}"
+        )
+    return parsed
+
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--python-implementation", required=True)
     parser.add_argument("--python-version", required=True)
-    parser.add_argument("--max-document-bytes", required=True, type=int)
+    parser.add_argument(
+        "--max-document-bytes",
+        required=True,
+        type=_bounded_document_bytes,
+        default=DEFAULT_MAX_JSON_DOCUMENT_BYTES,
+    )
     return parser.parse_args(argv)
 
 
@@ -46,9 +64,6 @@ def _has_non_finite(value: object) -> bool:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
-    if args.max_document_bytes < 0:
-        sys.stderr.write("json_parser_invalid_input_budget\n")
-        return 3
     if not _runtime_identity_matches(args):
         sys.stderr.write("json_parser_runtime_identity_mismatch\n")
         return 3
