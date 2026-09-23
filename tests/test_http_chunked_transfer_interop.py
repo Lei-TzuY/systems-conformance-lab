@@ -92,22 +92,8 @@ def test_shared_malformed_chunk_framing_returns_decode_error(
     }
 
 
-def test_missing_terminal_crlf_after_zero_chunk_is_shared_tolerance() -> None:
+def test_missing_terminal_crlf_surfaces_native_policy_difference() -> None:
     transfer_body = b"5\r\nhello\r\n0\r\n"
-    run = _harness().evaluate(transfer_body)
-
-    assert run.comparison.classification == "match"
-    assert run.signature is None
-    assert _payload(run.candidate.stdout.text) == {
-        "body_hex": b"hello".hex(),
-        "content_length": None,
-        "ok": True,
-        "transfer_encoding": "chunked",
-    }
-
-
-def test_premature_chunk_close_surfaces_native_policy_difference() -> None:
-    transfer_body = b"5\r\nhel"
     run = _harness().evaluate(transfer_body)
 
     assert run.comparison.classification == "product_mismatch"
@@ -115,12 +101,24 @@ def test_premature_chunk_close_surfaces_native_policy_difference() -> None:
     assert run.signature is not None
     assert run.signature.kind == "product_mismatch"
     assert _payload(run.candidate.stdout.text) == {
-        "body_hex": b"hel".hex(),
+        "error": "body_decode_error",
+        "ok": False,
+    }
+    assert _payload(run.oracle.stdout.text) == {
+        "body_hex": b"hello".hex(),
         "content_length": None,
         "ok": True,
         "transfer_encoding": "chunked",
     }
-    assert _payload(run.oracle.stdout.text) == {
+
+
+def test_premature_chunk_close_is_shared_rejection() -> None:
+    transfer_body = b"5\r\nhel"
+    run = _harness().evaluate(transfer_body)
+
+    assert run.comparison.classification == "match"
+    assert run.signature is None
+    assert _payload(run.candidate.stdout.text) == {
         "error": "body_decode_error",
         "ok": False,
     }
@@ -170,13 +168,13 @@ def test_over_observed_body_budget_fails_closed() -> None:
     }
 
 
-def test_discovery_publishes_and_replays_premature_chunk_difference(
+def test_discovery_publishes_and_replays_terminal_crlf_difference(
     tmp_path,
 ) -> None:
     harness = _harness()
     corpus = (
         b"3\r\nabc\r\n0\r\n\r\n",
-        b"5\r\nhel",
+        b"3\r\nabc\r\n0\r\n",
     )
 
     discovery = run_failure_discovery_campaign(
