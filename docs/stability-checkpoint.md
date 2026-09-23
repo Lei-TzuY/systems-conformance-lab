@@ -244,3 +244,18 @@ This checkpoint deliberately avoids a blanket claim that Python and Node expose 
 same Unicode data version for every code point. It does not generalize case folding,
 locale/collation, grapheme segmentation, identifier security, or additional encodings.
 Those remain separate architectural surfaces.
+
+
+### Unicode normalization runtime-identity checkpoint
+
+Normalization evidence now binds the semantic runtime tables that can change behavior
+without changing a target's logical form. Python captures implementation/runtime and
+`unicodedata` Unicode versions; Node captures Node, ICU, and Unicode versions through
+the shared bounded runner. Both workers verify the captured identity before consuming
+case bytes, and the identity is embedded in target argv/script so the unchanged harness
+naturally includes it in replay-context SHA-256.
+
+This closes a reproducibility gap left by the initial normalization interoperability
+slice: a runtime Unicode-table upgrade can no longer be mistaken for the same replay
+context merely because argv, cwd, environment, and execution ceilings are unchanged.
+The generic repro schema and harness remain untouched.
