@@ -41,6 +41,19 @@ function emit(value) {
   process.stdout.write(JSON.stringify(canonicalize(value)) + "\n");
 }
 
+function hasNonFinite(value) {
+  if (typeof value === "number") {
+    return !Number.isFinite(value);
+  }
+  if (Array.isArray(value)) {
+    return value.some(hasNonFinite);
+  }
+  if (value !== null && typeof value === "object") {
+    return Object.values(value).some(hasNonFinite);
+  }
+  return false;
+}
+
 function readBoundedStdin(limit) {
   const chunks = [];
   let total = 0;
@@ -81,10 +94,22 @@ if (process.version !== EXPECTED_NODE_VERSION) {
       process.exit(0);
     }
 
+    let value;
     try {
-      emit({ok: true, value: JSON.parse(text)});
+      value = JSON.parse(text);
     } catch (_) {
       emit({error: "json_parse_error", ok: false});
+      process.exit(0);
+    }
+
+    try {
+      if (hasNonFinite(value)) {
+        emit({error: "non_finite_number", ok: false});
+      } else {
+        emit({ok: true, value});
+      }
+    } catch (_) {
+      emit({error: "json_result_error", ok: false});
     }
   }
 }
