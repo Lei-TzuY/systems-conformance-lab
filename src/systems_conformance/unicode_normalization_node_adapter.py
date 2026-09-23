@@ -101,10 +101,16 @@ def _probe_node_runtime_identity(node_executable: str) -> tuple[str, str, str]:
 
     if not isinstance(payload, dict) or set(payload) != {"node", "icu", "unicode"}:
         raise RuntimeError("Node Unicode runtime identity probe returned invalid fields")
-    values = tuple(payload[field] for field in ("node", "icu", "unicode"))
+    node_version = payload["node"]
+    icu_version = payload["icu"]
+    unicode_version = payload["unicode"]
+    values = (node_version, icu_version, unicode_version)
     if any(not isinstance(value, str) or not value or len(value) > 128 for value in values):
         raise RuntimeError("Node Unicode runtime identity probe returned invalid values")
-    return values  # type: ignore[return-value]
+    assert isinstance(node_version, str)
+    assert isinstance(icu_version, str)
+    assert isinstance(unicode_version, str)
+    return node_version, icu_version, unicode_version
 
 
 def _node_script(
