@@ -436,3 +436,25 @@ shared HTTP(S) parser subset so parser-policy differences are not misattributed 
 coupling. Iterator mutation during traversal, two-argument delete/has extensions,
 file/opaque URLs, browser origin/security state, navigation/submission, multipart forms,
 and non-UTF-8 form encodings remain outside this checkpoint.
+
+
+### Base64/Base64url codec interoperability checkpoint
+
+The conformance surface now includes binary-to-text codec behavior through separate
+Python stdlib and Node Buffer child-process targets. Encode mode consumes arbitrary bytes;
+decode mode requires ASCII transport and emits decoded bytes as lowercase hexadecimal,
+keeping transport validation separate from codec policy.
+
+Executable shared evidence covers canonical Base64, complete unpadded quartets, arbitrary
+binary bytes, shared forgiving-decode cases, and Base64url alphabet handling. Native
+policy differences remain visible rather than normalized: Node accepts missing padding
+and several flexible spellings that Python rejects, while Node Base64url encoding omits
+padding that Python urlsafe_b64encode retains. Deterministic discovery publishes and
+replays a missing-padding mismatch under the existing stable failure identity.
+
+Mode, alphabet, Python implementation/version, and Node version remain immutable replay
+configuration. The generic runner, comparator, discovery, repro, and replay layers are
+unchanged. MIME/PEM wrapping, streaming transforms, browser atob/btoa DOMString policy,
+data URLs, and cryptographic integrity/canonical-signature rules remain separate future
+surfaces.
+\n
