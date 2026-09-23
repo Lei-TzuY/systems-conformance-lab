@@ -35,6 +35,8 @@ from .fuzz import (
 from .gzip_decompression_adapter import GzipDecompressionTarget
 from .gzip_decompression_node_adapter import GzipDecompressionNodeTarget
 from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproReplay
+from .http_content_encoding_adapter import HTTPContentEncodingTarget
+from .http_content_encoding_node_adapter import HTTPContentEncodingNodeTarget
 from .idna_hostname_adapter import IDNAHostnameTarget
 from .idna_hostname_node_adapter import IDNANodeHostnameTarget
 from .iso_timestamp_adapter import ISOTimestampTarget
@@ -175,6 +177,8 @@ __all__ = [
     "FuzzFailure",
     "GzipDecompressionNodeTarget",
     "GzipDecompressionTarget",
+    "HTTPContentEncodingNodeTarget",
+    "HTTPContentEncodingTarget",
     "IDNAHostnameTarget",
     "IDNANodeHostnameTarget",
     "ISOTimestampNodeTarget",

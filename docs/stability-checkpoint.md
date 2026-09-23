@@ -594,3 +594,30 @@ replays the charset-policy mismatch through the existing repro substrate.
 Browser submission/navigation, HTTP transport, streaming multipart parsing, nested
 multiparts, transfer-encoding parity, MIME sniffing, upload spooling, arbitrary boundary
 generation, and performance claims remain outside this checkpoint.
+
+
+### HTTP Content-Encoding interoperability checkpoint
+
+The conformance surface now composes a controlled loopback HTTP server with native
+response-body decoding. Cases supply only a binary response mode and wire body; each
+worker binds its own one-shot server to `127.0.0.1` and constructs the client URL
+internally, so fuzz inputs cannot select a host, port, or external destination.
+
+Python `urllib.request.urlopen` and Node built-in `fetch` observe the same status,
+Content-Type, wire Content-Length, optional gzip Content-Encoding, and response bytes.
+Identity responses match across runtimes. Gzip responses preserve a real client-policy
+difference: Python exposes the gzip wire body, while Node Fetch automatically exposes the
+decoded payload while retaining the gzip response headers. Malformed gzip similarly
+leaves Python with raw bytes but produces a Node body-decode failure.
+
+Wire-body and observed-body ceilings are independent replay configuration. Python probes
+one byte past the observed ceiling; Node reads the decoded Fetch body incrementally and
+cancels when accumulated output crosses the bound, so gzip expansion is constrained
+before result serialization. Python implementation/version and Node/Undici/zlib identity
+also participate in replay context. Deterministic discovery publishes and replays the
+gzip auto-decoding mismatch.
+
+This checkpoint does not expose arbitrary destinations and does not claim HTTP/2 or
+HTTP/3, TLS, redirects, proxies, cookies, caching, transfer-encoding equivalence,
+brotli/deflate semantics, browser Fetch behavior, streaming backpressure equivalence, or
+performance results.
