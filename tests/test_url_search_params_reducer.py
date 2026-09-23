@@ -115,8 +115,7 @@ def test_real_sort_mismatch_reduces_and_replays(tmp_path) -> None:
     assert len(reduced.reduction.reduced) < len(raw)
     parsed = parse_url_search_params_request(reduced.reduction.reduced)
     assert URLSearchParamsOperation(_SORT, ()) in parsed.operations
-    assert reduced.repro.metadata["domain"] == "url-search-params"
-
     replay = harness.replay_repro(reduced.repro.path)
     assert replay.reproduced is True
     assert replay.run.signature == failure.signature
+    assert replay.bundle.metadata["domain"] == "url-search-params"
