@@ -383,3 +383,24 @@ parser differences are not misattributed to query policy. Python and Node runtim
 identity remain verified replay context. Full URLSearchParams mutation/sort APIs, file
 and opaque URLs, browser origin/security, multipart forms, non-UTF-8 form encodings, and
 navigation behavior remain outside this checkpoint.
+
+
+### Stateful URLSearchParams interoperability checkpoint
+
+The URL domain now includes ordered query-state mutation rather than only stateless form
+codec operations or full-URL query round trips. A bounded binary protocol carries an
+initial duplicate-preserving pair list plus append/set/delete/sort operations to separate
+Python and Node child-process targets.
+
+Executable evidence covers duplicate-key position semantics, missing-key append,
+delete-all behavior, stable ASCII sort, and post-mutation serialization. The adapters
+also preserve a genuine native policy difference: WHATWG URLSearchParams.sort compares
+UTF-16 code units, while Python native string sort compares Unicode code points.
+Supplementary-plane versus BMP-private-use names therefore provide a stable product
+mismatch that deterministic discovery publishes and replay reproduces.
+
+Initial-pair, operation, and field-byte ceilings plus runtime identity remain immutable
+target configuration and replay context. The generic runner, comparator, discovery,
+repro, and replay layers remain unchanged. Browser-live URL coupling, iterator mutation,
+non-UTF-8 forms, multipart submission, and broader navigation/security policy remain
+outside this checkpoint.
