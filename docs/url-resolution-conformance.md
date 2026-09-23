@@ -32,9 +32,11 @@ Executable shared-subset evidence covers:
 - absolute references overriding the base.
 
 Native policy is deliberately preserved rather than normalized away. WHATWG special-URL
-backslash handling differs from urllib.parse during relative resolution, and an empty
-reference against a base containing a fragment also exposes different native behavior.
-These remain product mismatches rather than being hidden by adapter policy.
+backslash handling differs from urllib.parse during relative resolution, an empty
+reference against a base containing a fragment exposes different native behavior, and
+WHATWG special-scheme slash recovery can normalize a base such as
+`https:///missing-host` that urllib.parse rejects for lacking a hostname. These remain
+product mismatches rather than being hidden by adapter policy.
 
 A deterministic two-case discovery schedule begins with a matching parent reference and
 then a backslash reference that produces a stable product mismatch. The unchanged
