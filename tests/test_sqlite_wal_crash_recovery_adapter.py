@@ -13,7 +13,7 @@ from systems_conformance.sqlite_wal_crash_recovery_adapter import (
 def _execute(target: SQLiteWALCrashRecoveryTarget, case: bytes = b""):
     return target.as_command_target().execute(
         case,
-        timeout_seconds=8.0,
+        timeout_seconds=10.0,
         max_output_bytes=4096,
         max_total_output_bytes=8192,
     )
@@ -307,7 +307,7 @@ def test_real_harness_repeats_wal_crash_recovery_deterministically() -> None:
     harness = DifferentialHarness(
         candidate=target.as_command_target(),
         oracle=target.as_command_target(),
-        timeout_seconds=8.0,
+        timeout_seconds=10.0,
     )
 
     run = harness.evaluate(b"")

@@ -483,3 +483,30 @@ Python implementation/version and Node/V8 versions are verified runtime configur
 and replay identity. This checkpoint does not claim complete RFC 3339 equivalence,
 locale parsing, timezone-database or DST semantics, leap seconds, duration arithmetic,
 or sub-millisecond cross-runtime identity.
+
+
+
+### Gzip decompression interoperability checkpoint
+
+The conformance surface now includes bounded gzip decompression as a binary framing and
+expansion domain. Python `gzip.GzipFile` and Node `zlib.gunzipSync` execute through
+separate real child processes above the unchanged runner, differential comparison,
+discovery, repro, and replay substrate.
+
+Decoded output is bounded inside the target before hexadecimal serialization. Python
+reads at most one byte beyond the configured ceiling; Node uses `maxOutputLength` with
+the same one-byte probe. Exact-limit output succeeds while over-limit expansion fails
+closed as `decompressed_output_too_large`, preventing compressed inputs from turning
+generic stdout capture into the first decompression budget.
+
+Executable shared evidence covers single and concatenated members, binary payloads,
+trailing zero padding, malformed headers, truncation, CRC corruption, and output-budget
+boundaries. Native trailing policy remains visible: after a valid member, Node accepts a
+`00 01` suffix that Python rejects as trailing non-gzip data. Deterministic discovery
+publishes and replays that mismatch. Empty transport is also preserved as a native
+acceptance difference rather than normalized away.
+
+The decoded-output ceiling plus Python implementation/version/zlib identity and Node/zlib
+identity participate in replay context. This checkpoint does not claim deterministic
+gzip encoding bytes, raw DEFLATE equivalence, ZIP semantics, HTTP Content-Encoding,
+streaming backpressure, or performance results.
