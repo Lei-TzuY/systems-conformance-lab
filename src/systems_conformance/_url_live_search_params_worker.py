@@ -195,7 +195,7 @@ def _set_pair(pairs: list[tuple[str, str]], key: str, value: str) -> None:
 
 
 def _set_search(state: URLState, value: str) -> None:
-    query = value[1:] if value.startswith("?") else value
+    query = value.removeprefix("?")
     pairs = _decode_query(query)
     state.raw_query = query
     state.pairs[:] = pairs
