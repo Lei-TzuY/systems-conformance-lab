@@ -35,7 +35,12 @@ function hasOnlyAscii(raw) {
 }
 
 function hasExplicitTimezone(text) {
-  return /(?:Z|[+-]\d{2}(?::?\d{2})?(?::?\d{2}(?:[.,]\d+)?)?)$/.test(text);
+  if (text.length <= 10) {
+    return false;
+  }
+  return /(?:Z|[+-]\d{2}(?::?\d{2})?(?::?\d{2}(?:[.,]\d+)?)?)$/.test(
+    text.slice(10),
+  );
 }
 
 if (
