@@ -564,3 +564,33 @@ precision witness through the existing repro substrate. This checkpoint does not
 RFC 8259 canonicalization, schema validation, duplicate-key diagnostics, arbitrary
 precision parity, streaming JSON, JSON5, lossless source formatting, or performance
 results.
+
+
+
+### Multipart/form-data parser interoperability checkpoint
+
+The conformance surface now includes bounded MIME/form-data parsing through separate
+Python stdlib `email` and Node built-in `Response.formData()` child-process targets.
+Cases contain raw body bytes only; both runtimes receive the same fixed target-owned
+boundary, so this phase cannot escape into HTTP transport or external-resource access.
+
+Successful evidence preserves entry order and duplicate names. Names, text values, file
+names, and file bodies are projected into hexadecimal byte forms so Unicode JSON
+serialization does not become a false interoperability dimension. File Content-Type is
+retained explicitly.
+
+Both workers enforce a raw-body ceiling before native parsing, defaulting to 64 KiB and
+capped at 256 KiB. Python implementation/version and Node/Undici identity plus the body
+ceiling remain replay-bound target configuration.
+
+Executable shared evidence covers ordinary and duplicate text fields, empty values,
+explicit UTF-8 text, binary files, metadata preservation, malformed bodies, and budget
+boundaries. Native policy differences remain visible: Python honors an
+`iso-8859-1` text charset where Node's FormData path yields a UTF-8 replacement
+character, Python accepts LF-only multipart framing that Node rejects, and Python
+resolves `filename*=` metadata that Node rejects. Deterministic discovery publishes and
+replays the charset-policy mismatch through the existing repro substrate.
+
+Browser submission/navigation, HTTP transport, streaming multipart parsing, nested
+multiparts, transfer-encoding parity, MIME sniffing, upload spooling, arbitrary boundary
+generation, and performance claims remain outside this checkpoint.
