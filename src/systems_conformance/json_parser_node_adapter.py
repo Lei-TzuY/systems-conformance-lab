@@ -37,8 +37,16 @@ function canonicalize(value) {
   return value;
 }
 
+function stringifyAscii(value) {
+  return JSON.stringify(canonicalize(value)).replace(
+    /[\u007f-\uffff]/g,
+    (character) =>
+      "\\u" + character.charCodeAt(0).toString(16).padStart(4, "0"),
+  );
+}
+
 function emit(value) {
-  process.stdout.write(JSON.stringify(canonicalize(value)) + "\n");
+  process.stdout.write(stringifyAscii(value) + "\n");
 }
 
 function hasNonFinite(value) {
