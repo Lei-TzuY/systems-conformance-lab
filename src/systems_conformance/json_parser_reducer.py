@@ -4,6 +4,8 @@ import json
 from collections.abc import Iterator
 from typing import Any
 
+MAX_JSON_REDUCER_NESTING_DEPTH = 256
+
 
 def _reject_constant(value: str) -> None:
     raise ValueError(f"non-standard JSON constant: {value}")
@@ -16,6 +18,24 @@ def _load(raw: bytes) -> Any:
         return json.loads(text, parse_constant=_reject_constant)
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ValueError("input is not strict JSON") from exc
+    except RecursionError as exc:
+        raise ValueError("JSON document exceeds parser recursion budget") from exc
+
+
+def _validate_nesting_depth(value: Any) -> None:
+    """Reject structures too deep for the recursive candidate walk before yielding."""
+    stack: list[tuple[Any, int]] = [(value, 0)]
+    while stack:
+        current, depth = stack.pop()
+        if depth > MAX_JSON_REDUCER_NESTING_DEPTH:
+            raise ValueError(
+                "JSON document exceeds reducer nesting depth "
+                f"{MAX_JSON_REDUCER_NESTING_DEPTH}"
+            )
+        if isinstance(current, dict):
+            stack.extend((item, depth + 1) for item in current.values())
+        elif isinstance(current, list):
+            stack.extend((item, depth + 1) for item in current)
 
 
 def _encode(value: Any) -> bytes:
@@ -73,21 +93,26 @@ def _local_reductions(value: Any) -> Iterator[Any]:
 def json_reduction_candidates(raw: bytes) -> Iterator[bytes]:
     """Yield deterministic, unique, strictly smaller valid-JSON candidates.
 
-    The reducer treats malformed UTF-8, malformed JSON, and non-standard constants as
-    infrastructure input errors rather than guessing at syntax. Candidates preserve a
-    complete JSON document while deleting structure or shrinking semantic fields; the
-    live failure predicate remains responsible for retaining only the target behavior.
+    The reducer treats malformed UTF-8, malformed JSON, non-standard constants, and
+    over-deep structures as infrastructure input errors rather than guessing at syntax.
+    Candidates preserve a complete JSON document while deleting structure or shrinking
+    semantic fields; the live failure predicate remains responsible for retaining only
+    the target behavior.
     """
     value = _load(raw)
+    _validate_nesting_depth(value)
     seen: set[bytes] = set()
 
-    canonical = _encode(value)
-    if len(canonical) < len(raw):
-        seen.add(canonical)
-        yield canonical
+    try:
+        canonical = _encode(value)
+        if len(canonical) < len(raw):
+            seen.add(canonical)
+            yield canonical
 
-    for reduced in _local_reductions(value):
-        candidate = _encode(reduced)
-        if len(candidate) < len(raw) and candidate not in seen:
-            seen.add(candidate)
-            yield candidate
+        for reduced in _local_reductions(value):
+            candidate = _encode(reduced)
+            if len(candidate) < len(raw) and candidate not in seen:
+                seen.add(candidate)
+                yield candidate
+    except RecursionError as exc:
+        raise ValueError("JSON reduction exceeded recursion budget") from exc
