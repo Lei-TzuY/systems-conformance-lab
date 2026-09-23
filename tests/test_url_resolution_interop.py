@@ -191,7 +191,6 @@ def test_invalid_utf8_in_either_input_rejects_before_resolution(
         b"/relative/base",
         b"mailto:user@example.com",
         b"ftp://example.com/base",
-        b"https:///missing-host",
     ],
 )
 def test_out_of_scope_base_url_rejects_canonically(base: bytes) -> None:
@@ -210,6 +209,7 @@ def test_out_of_scope_base_url_rejects_canonically(base: bytes) -> None:
     [
         (b"https://example.com/a/b/", b"..\\d"),
         (b"https://example.com/a/b/c?old=1#old", b""),
+        (b"https:///missing-host", b"child"),
     ],
 )
 def test_native_relative_resolution_semantics_surface_product_mismatches(
