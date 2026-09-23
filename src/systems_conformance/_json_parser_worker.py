@@ -49,7 +49,7 @@ def _emit(value: dict[str, object]) -> None:
         separators=(",", ":"),
         allow_nan=False,
     )
-    sys.stdout.write(payload + "\n")
+    sys.stdout.buffer.write((payload + "\n").encode("ascii"))
 
 
 def _has_non_finite(value: object) -> bool:
