@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from datetime import datetime, timezone
 
 _EXPLICIT_TIMEZONE = re.compile(
-    r"(?:Z|[+-]\\d{2}(?::?\\d{2})?(?::?\\d{2}(?:[.,]\\d+)?)?)$"
+    r"(?:Z|[+-]\d{2}(?::?\d{2})?(?::?\d{2}(?:[.,]\d+)?)?)$"
 )
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
@@ -39,6 +39,12 @@ def _encode_result(value: dict[str, object]) -> bytes:
         ).encode("utf-8")
         + b"\n"
     )
+
+
+def _has_explicit_timezone(text: str) -> bool:
+    if len(text) <= 10:
+        return False
+    return _EXPLICIT_TIMEZONE.search(text[10:]) is not None
 
 
 def _epoch_milliseconds(value: datetime) -> int:
@@ -72,7 +78,7 @@ def _parse_timestamp(raw: bytes) -> dict[str, object]:
     except ValueError:
         return {"error": "iso_timestamp_parse_error", "ok": False}
 
-    if _EXPLICIT_TIMEZONE.search(text) is None or value.tzinfo is None:
+    if not _has_explicit_timezone(text) or value.tzinfo is None:
         return {"error": "timezone_required", "ok": False}
 
     return {
