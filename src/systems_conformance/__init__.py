@@ -9,6 +9,8 @@ from .base64_codec_node_adapter import Base64CodecNodeTarget
 from .byte_fuzz import DeterministicByteMutations
 from .byte_reducer import hierarchical_byte_deletions
 from .comparator import ComparisonResult, compare_results
+from .data_url_fetch_adapter import DataURLFetchTarget
+from .data_url_fetch_node_adapter import DataURLFetchNodeTarget
 from .directory_sync_fault import FaultingDirectorySync
 from .durable_publish import FaultingDurableFilePublisher
 from .durable_repro_import import import_durable_repro_archive
@@ -145,6 +147,8 @@ __all__ = [
     "CandidateBudgetExhausted",
     "CommandTarget",
     "ComparisonResult",
+    "DataURLFetchNodeTarget",
+    "DataURLFetchTarget",
     "DeterministicByteMutations",
     "DifferentialHarness",
     "DifferentialRun",
