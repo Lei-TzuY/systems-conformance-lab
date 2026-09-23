@@ -139,7 +139,6 @@ def test_node_target_rejects_missing_runtime() -> None:
         UnicodeNodeNormalizationTarget(node_executable="__missing_conformance_node__")
 
 
-
 def _execute_command(target: CommandTarget, case: bytes = b"A"):
     return target.execute(
         case,
