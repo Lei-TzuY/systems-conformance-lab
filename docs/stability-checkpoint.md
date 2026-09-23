@@ -317,3 +317,23 @@ base-length frame so resolution evidence is not confounded by JSON parser differ
 Python and Node runtime versions remain verified replay identity. IDNA/UTS #46, file and
 opaque URLs, browser origin policy, form encoding, and percent-encoding normalization
 remain separate future surfaces.
+
+
+### IDNA hostname interoperability checkpoint
+
+The URL domain now includes Unicode hostname-to-ASCII processing as an independent
+standards/policy surface. Python stdlib IDNA2003/Nameprep and Node WHATWG
+domain-to-ASCII execute as separate child processes while the generic runner,
+differential comparison, failure discovery, repro, and replay substrate remains
+unchanged.
+
+Executable evidence proves a shared lowercase/Unicode subset and preserves real policy
+differences instead of normalizing them away: sharp-s mapping, ZERO WIDTH JOINER
+handling, and ASCII hostname case surface as stable product mismatches. A deterministic
+discovery witness is published and replayed under the original stable failure signature.
+
+Replay identity is strengthened for the semantic tables that govern the domain. Python
+binds implementation/version and its Unicode 3.2 Nameprep table identity; Node binds
+Node, ICU, and Unicode versions and verifies them before processing input. DNS resolver
+behavior, certificate matching, public-suffix policy, and browser origin/security rules
+remain outside this checkpoint.

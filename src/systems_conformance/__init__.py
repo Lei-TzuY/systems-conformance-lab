@@ -27,6 +27,8 @@ from .fuzz import (
     run_fuzz_campaign,
 )
 from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproReplay
+from .idna_hostname_adapter import IDNAHostnameTarget
+from .idna_hostname_node_adapter import IDNANodeHostnameTarget
 from .model import ExecutionResult, StreamCapture
 from .reducer import CandidateBudgetExhausted, ReductionResult, reduce_case
 from .replace_fault import FaultingAtomicReplace
@@ -138,6 +140,8 @@ __all__ = [
     "FuzzCampaignResult",
     "FuzzDiscoveryResult",
     "FuzzFailure",
+    "IDNAHostnameTarget",
+    "IDNANodeHostnameTarget",
     "LoadedReproBundle",
     "ReducedFailureRepro",
     "ReductionResult",
