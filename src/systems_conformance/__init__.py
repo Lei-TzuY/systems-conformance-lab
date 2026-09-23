@@ -31,6 +31,8 @@ from .fuzz import (
 from .harness import CommandTarget, DifferentialHarness, DifferentialRun, ReproReplay
 from .idna_hostname_adapter import IDNAHostnameTarget
 from .idna_hostname_node_adapter import IDNANodeHostnameTarget
+from .json_value_adapter import JSONValueTarget
+from .json_value_node_adapter import JSONNodeValueTarget
 from .model import ExecutionResult, StreamCapture
 from .reducer import CandidateBudgetExhausted, ReductionResult, reduce_case
 from .replace_fault import FaultingAtomicReplace
@@ -159,6 +161,8 @@ __all__ = [
     "FuzzFailure",
     "IDNAHostnameTarget",
     "IDNANodeHostnameTarget",
+    "JSONNodeValueTarget",
+    "JSONValueTarget",
     "LoadedReproBundle",
     "ReducedFailureRepro",
     "ReductionResult",
