@@ -6,6 +6,10 @@ from json import dumps
 from shutil import which
 
 from .harness import CommandTarget
+from .json_parser_adapter import (
+    DEFAULT_MAX_JSON_DOCUMENT_BYTES,
+    MAX_CONFIGURED_JSON_DOCUMENT_BYTES,
+)
 from .runner import run_process
 
 _NODE_IDENTITY_SCRIPT = r"""
@@ -37,12 +41,36 @@ function emit(value) {
   process.stdout.write(JSON.stringify(canonicalize(value)) + "\n");
 }
 
+function readBoundedStdin(limit) {
+  const chunks = [];
+  let total = 0;
+
+  while (true) {
+    const remaining = limit + 1 - total;
+    if (remaining <= 0) {
+      return null;
+    }
+    const buffer = Buffer.allocUnsafe(Math.min(64 * 1024, remaining));
+    const count = fs.readSync(0, buffer, 0, buffer.length, null);
+    if (count === 0) {
+      break;
+    }
+    total += count;
+    if (total > limit) {
+      return null;
+    }
+    chunks.push(buffer.subarray(0, count));
+  }
+
+  return Buffer.concat(chunks, total);
+}
+
 if (process.version !== EXPECTED_NODE_VERSION) {
   process.stderr.write("json_parser_runtime_identity_mismatch\n");
   process.exitCode = 3;
 } else {
-  const raw = fs.readFileSync(0);
-  if (raw.length > MAX_DOCUMENT_BYTES) {
+  const raw = readBoundedStdin(MAX_DOCUMENT_BYTES);
+  if (raw === null) {
     emit({error: "input_too_large", ok: false});
   } else {
     let text;
@@ -103,7 +131,7 @@ def _node_script(*, runtime_identity: tuple[str], max_document_bytes: int) -> st
 class JSONParseNodeTarget:
     """Node JSON.parse target over bounded strict UTF-8 stdin."""
 
-    max_document_bytes: int = 64 * 1024
+    max_document_bytes: int = DEFAULT_MAX_JSON_DOCUMENT_BYTES
     node_executable: str = "node"
     _runtime_identity: tuple[str] = field(init=False, repr=False)
 
@@ -112,8 +140,14 @@ class JSONParseNodeTarget:
             self.max_document_bytes, int
         ):
             raise TypeError("max_document_bytes must be an integer")
-        if self.max_document_bytes < 0:
-            raise ValueError("max_document_bytes must be non-negative")
+        if (
+            self.max_document_bytes < 0
+            or self.max_document_bytes > MAX_CONFIGURED_JSON_DOCUMENT_BYTES
+        ):
+            raise ValueError(
+                "max_document_bytes must be between 0 and "
+                f"{MAX_CONFIGURED_JSON_DOCUMENT_BYTES}"
+            )
         if not isinstance(self.node_executable, str) or not self.node_executable:
             raise ValueError("node_executable must be a non-empty string")
         if which(self.node_executable) is None:
