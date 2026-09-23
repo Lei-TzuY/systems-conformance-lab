@@ -101,6 +101,8 @@ from .sqlite_two_connection_triage import (
     reduce_sqlite_two_connection_failure_to_repro,
 )
 from .triage import ReducedFailureRepro, reduce_failure_to_repro
+from .unicode_normalization_adapter import UnicodeNormalizationTarget
+from .unicode_normalization_node_adapter import UnicodeNodeNormalizationTarget
 from .utf8_node_adapter import UTF8NodeDecodeTarget
 from .utf8_stream_adapter import UTF8DecodeTarget
 from .write_fault import FaultingBinaryWriter
@@ -154,6 +156,8 @@ __all__ = [
     "StreamCapture",
     "UTF8DecodeTarget",
     "UTF8NodeDecodeTarget",
+    "UnicodeNodeNormalizationTarget",
+    "UnicodeNormalizationTarget",
     "compare_results",
     "discover_sqlite_two_connection_failure_to_archive",
     "discover_sqlite_two_connection_failure_to_repro",
