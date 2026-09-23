@@ -86,30 +86,34 @@ if (process.version !== EXPECTED_NODE_VERSION) {
   if (raw === null) {
     emit({error: "input_too_large", ok: false});
   } else {
-    let text;
+    let text = null;
     try {
       text = new TextDecoder("utf-8", {fatal: true, ignoreBOM: true}).decode(raw);
     } catch (_) {
       emit({error: "utf8_decode_error", ok: false});
-      process.exit(0);
     }
 
-    let value;
-    try {
-      value = JSON.parse(text);
-    } catch (_) {
-      emit({error: "json_parse_error", ok: false});
-      process.exit(0);
-    }
-
-    try {
-      if (hasNonFinite(value)) {
-        emit({error: "non_finite_number", ok: false});
-      } else {
-        emit({ok: true, value});
+    if (text !== null) {
+      let parsed = false;
+      let value;
+      try {
+        value = JSON.parse(text);
+        parsed = true;
+      } catch (_) {
+        emit({error: "json_parse_error", ok: false});
       }
-    } catch (_) {
-      emit({error: "json_result_error", ok: false});
+
+      if (parsed) {
+        try {
+          if (hasNonFinite(value)) {
+            emit({error: "non_finite_number", ok: false});
+          } else {
+            emit({ok: true, value});
+          }
+        } catch (_) {
+          emit({error: "json_result_error", ok: false});
+        }
+      }
     }
   }
 }
