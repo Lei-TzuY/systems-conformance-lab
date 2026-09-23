@@ -226,3 +226,21 @@ malformed and truncated input, and strict/replace policies. Pattern configuratio
 bounded to 64 positive widths and participates in replay identity. Legacy fixed-size
 targets retain their previous argv when no pattern is configured, so the new capability
 extends rather than replaces the established evidence surface.
+
+
+### Unicode normalization interoperability checkpoint
+
+The second conformance domain has promoted from byte decoding and transport segmentation
+into a distinct Unicode semantic service. Python unicodedata.normalize and Node 22
+String.prototype.normalize now execute as separate real-process targets above the
+unchanged differential substrate.
+
+Executable evidence covers NFC, NFD, NFKC, and NFKD using stable canonical and
+compatibility vectors, Hangul composition/decomposition, BOM preservation, strict
+invalid UTF-8 rejection, and a finite deterministic byte-mutation campaign. The
+normalization form is bound into target configuration and replay identity.
+
+This checkpoint deliberately avoids a blanket claim that Python and Node expose the
+same Unicode data version for every code point. It does not generalize case folding,
+locale/collation, grapheme segmentation, identifier security, or additional encodings.
+Those remain separate architectural surfaces.
