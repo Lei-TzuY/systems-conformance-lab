@@ -23,13 +23,26 @@ const { TextDecoder } = require("node:util");
 const EXPECTED_NODE_VERSION = __NODE_VERSION__;
 const MAX_DOCUMENT_BYTES = __MAX_DOCUMENT_BYTES__;
 
+function compareUnicodeCodePoints(left, right) {
+  const leftPoints = Array.from(left, (character) => character.codePointAt(0));
+  const rightPoints = Array.from(right, (character) => character.codePointAt(0));
+  const shared = Math.min(leftPoints.length, rightPoints.length);
+
+  for (let index = 0; index < shared; index += 1) {
+    if (leftPoints[index] !== rightPoints[index]) {
+      return leftPoints[index] - rightPoints[index];
+    }
+  }
+  return leftPoints.length - rightPoints.length;
+}
+
 function canonicalize(value) {
   if (Array.isArray(value)) {
     return value.map(canonicalize);
   }
   if (value !== null && typeof value === "object") {
     const result = {};
-    for (const key of Object.keys(value).sort()) {
+    for (const key of Object.keys(value).sort(compareUnicodeCodePoints)) {
       result[key] = canonicalize(value[key]);
     }
     return result;
