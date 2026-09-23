@@ -510,3 +510,32 @@ The decoded-output ceiling plus Python implementation/version/zlib identity and 
 identity participate in replay context. This checkpoint does not claim deterministic
 gzip encoding bytes, raw DEFLATE equivalence, ZIP semantics, HTTP Content-Encoding,
 streaming backpressure, or performance results.
+
+
+
+### Data URL fetch/decode interoperability checkpoint
+
+The conformance surface now composes URL dispatch, MIME metadata, percent decoding, and
+Base64 decoding into a single `data:` fetch pipeline. Python `urllib.request.urlopen`
+and Node built-in `fetch` execute through separate real child processes above the
+unchanged runner, comparator, discovery, repro, and replay substrate.
+
+A strict case-insensitive `data:` scheme gate executes before either native API, so
+fuzz inputs cannot escape into network, filesystem, or script schemes. Both targets also
+enforce a bounded data-URL stdin ceiling before native parsing. Successful results retain
+the native Content-Type value and exact body bytes, allowing metadata and payload policy
+to be compared together.
+
+Executable shared evidence covers default and explicit media types, parameters,
+percent-decoded text/binary payloads, valid Base64, percent-encoded padding, empty
+payloads, malformed URLs, and byte-budget boundaries. Native Base64 policy remains
+visible: Node accepts missing padding while Python accepts selected forgiving spellings
+that Node rejects. The stronger cross-layer witness is `;BASE64`: Node dispatches it as
+a case-insensitive Base64 marker, while Python treats it as media-type metadata and
+returns the encoded payload bytes. Deterministic discovery publishes and replays that
+mismatch.
+
+The URL-byte ceiling plus Python implementation/version and Node/Undici identity
+participate in replay context. HTTP/file access, browser origin/CSP/navigation, Blob
+URLs, multipart parsing, MIME sniffing, charset transcoding, streaming bodies, and
+cryptographic integrity remain outside this checkpoint.
