@@ -436,3 +436,31 @@ shared HTTP(S) parser subset so parser-policy differences are not misattributed 
 coupling. Iterator mutation during traversal, two-argument delete/has extensions,
 file/opaque URLs, browser origin/security state, navigation/submission, multipart forms,
 and non-UTF-8 form encodings remain outside this checkpoint.
+
+### Cross-runtime JSON value semantics checkpoint
+
+After URL parsing, query mutation, live URL/searchParams coupling, and structured
+URLSearchParams failure reduction established a complete executable URL path, the active
+interoperability frontier promotes to a separate structured-data domain instead of
+farming additional URL API variants.
+
+Python standard-library `json.loads` and Node 22 `JSON.parse` now execute as separate
+real child-process targets over one bounded strict-UTF-8 JSON text. Successful parses are
+projected onto a language-neutral tagged value tree. Object keys are observed in a
+deterministic ASCII-escaped order so JavaScript property-enumeration rules do not create
+false parser mismatches, while native numeric materialization remains visible.
+
+Executable shared evidence covers scalar/container values, duplicate-key last-value
+behavior, integer-like object keys, escaped lone surrogates, invalid UTF-8 and syntax
+rejection, and fail-closed input/depth/node budgets including parse-time recursion
+exhaustion for already-out-of-scope deep values. Native differences are intentionally
+preserved: JavaScript Number precision beyond the safe-integer range, float/negative-zero
+stringification, and Python's non-standard NaN/Infinity acceptance surface as product
+mismatches. Deterministic discovery publishes the large-integer precision witness and
+replay preserves its stable failure identity.
+
+Python/Node runtime identity plus JSON-byte, depth, and node ceilings participate in
+replay context. The generic runner, comparator, discovery, repro, and replay layers remain
+unchanged. This checkpoint does not claim blanket RFC 8259 conformance, serializer
+byte-equivalence, JSON5, streaming JSON, duplicate-key diagnostics, JSON Schema,
+canonical JSON, reviver/object-hook behavior, or arbitrary-precision normalization.
