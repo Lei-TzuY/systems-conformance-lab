@@ -186,13 +186,6 @@ def test_native_query_percent_encoding_policy_surfaces_product_mismatch() -> Non
     }
 
 
-@pytest.mark.parametrize(
-    "raw",
-    [
-        b"https://example.com/?x=%FF",
-        b"https://example.com/?x=%E2%82",
-    ],
-)
 def test_additional_native_percent_encode_set_divergence_is_stable() -> None:
     run = _harness().evaluate(b"https://example.com/?x=!*()~")
 
@@ -204,6 +197,13 @@ def test_additional_native_percent_encode_set_divergence_is_stable() -> None:
     assert _payload(run.oracle.stdout.text)["query"] == "x=%21%2A%28%29~"
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"https://example.com/?x=%FF",
+        b"https://example.com/?x=%E2%82",
+    ],
+)
 def test_invalid_percent_decoded_utf8_surfaces_product_mismatch(raw: bytes) -> None:
     run = _harness().evaluate(raw)
 
