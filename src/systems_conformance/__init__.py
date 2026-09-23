@@ -113,6 +113,8 @@ from .url_query_canonicalization_adapter import URLQueryCanonicalizationTarget
 from .url_query_canonicalization_node_adapter import URLNodeQueryCanonicalizationTarget
 from .url_resolution_adapter import URLResolutionTarget
 from .url_resolution_node_adapter import URLNodeResolutionTarget
+from .url_search_params_adapter import URLSearchParamsTarget
+from .url_search_params_node_adapter import URLSearchParamsNodeTarget
 from .utf8_node_adapter import UTF8NodeDecodeTarget
 from .utf8_stream_adapter import UTF8DecodeTarget
 from .utf16_node_adapter import UTF16NodeDecodeTarget
@@ -176,6 +178,8 @@ __all__ = [
     "URLParseTarget",
     "URLQueryCanonicalizationTarget",
     "URLResolutionTarget",
+    "URLSearchParamsNodeTarget",
+    "URLSearchParamsTarget",
     "UTF8DecodeTarget",
     "UTF8NodeDecodeTarget",
     "UTF16DecodeTarget",
