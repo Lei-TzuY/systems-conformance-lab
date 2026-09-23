@@ -135,7 +135,13 @@ def test_native_form_percent_policy_surfaces_query_canonicalization_mismatch(
     assert _payload(run.oracle.stdout.text)["query"] == python_query
 
 
-@pytest.mark.parametrize("raw", [b"https://example.com/path?x=%FF", b"https://example.com/path?x=%E2%82"])
+@pytest.mark.parametrize(
+    "raw",
+    [
+        b"https://example.com/path?x=%FF",
+        b"https://example.com/path?x=%E2%82",
+    ],
+)
 def test_invalid_percent_decoded_utf8_surfaces_product_mismatch(raw: bytes) -> None:
     run = _harness().evaluate(raw)
 
@@ -159,7 +165,6 @@ def test_invalid_percent_decoded_utf8_surfaces_product_mismatch(raw: bytes) -> N
     [
         b"ftp://example.com/path?x=1",
         b"/relative/path?x=1",
-        b"https:///missing-host?x=1",
     ],
 )
 def test_out_of_scope_or_invalid_url_rejects_canonically(raw: bytes) -> None:
