@@ -11,7 +11,10 @@ from systems_conformance import (
     reduce_failure_to_repro,
     run_failure_discovery_campaign,
 )
-from systems_conformance.json_parser_reducer import json_reduction_candidates
+from systems_conformance.json_parser_reducer import (
+    MAX_JSON_REDUCER_NESTING_DEPTH,
+    json_reduction_candidates,
+)
 
 
 def _harness() -> DifferentialHarness:
@@ -42,6 +45,15 @@ def test_candidates_are_deterministic_unique_smaller_valid_json() -> None:
 @pytest.mark.parametrize("raw", [b"{", b"NaN", b'"\xff"'])
 def test_reducer_fails_closed_on_non_strict_json(raw: bytes) -> None:
     with pytest.raises(ValueError):
+        tuple(json_reduction_candidates(raw))
+
+
+def test_reducer_fails_closed_before_recursive_walk_on_deep_json() -> None:
+    depth = MAX_JSON_REDUCER_NESTING_DEPTH + 1
+    raw = b"[" * depth + b"0" + b"]" * depth
+
+    assert json.loads(raw) is not None
+    with pytest.raises(ValueError, match="reducer nesting depth"):
         tuple(json_reduction_candidates(raw))
 
 
