@@ -12,18 +12,11 @@ _ATTR_CHAR = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz012
 
 
 def _parse_parts(raw: bytes) -> tuple[tuple[tuple[bytes, ...], bytes], ...]:
-    """Parse the canonical multipart corpus framing or fail closed.
-
-    Reduction accepts only CRLF-delimited parts with a final closing boundary,
-    non-empty ASCII header lines, and no preamble/epilogue. This deliberately
-    excludes LF-only, malformed, or ambiguous multipart input rather than
-    normalizing it into a different test case.
-    """
+    """Parse the canonical multipart corpus framing or fail closed."""
     if not raw.startswith(_DELIMITER + b"\r\n"):
         raise ValueError("non-canonical opening boundary")
     if not raw.endswith(_DELIMITER + b"--\r\n"):
         raise ValueError("missing canonical closing boundary")
-
     offset = len(_DELIMITER) + 2
     parts: list[tuple[tuple[bytes, ...], bytes]] = []
     marker = b"\r\n" + _DELIMITER
@@ -31,8 +24,7 @@ def _parse_parts(raw: bytes) -> tuple[tuple[tuple[bytes, ...], bytes], ...]:
         header_end = raw.find(b"\r\n\r\n", offset)
         if header_end < 0:
             raise ValueError("truncated multipart headers")
-        header_block = raw[offset:header_end]
-        headers = tuple(header_block.split(b"\r\n"))
+        headers = tuple(raw[offset:header_end].split(b"\r\n"))
         if not headers or any(not header for header in headers):
             raise ValueError("empty multipart header")
         for header in headers:
@@ -42,14 +34,11 @@ def _parse_parts(raw: bytes) -> tuple[tuple[tuple[bytes, ...], bytes], ...]:
                 raise ValueError("non-ASCII multipart header") from exc
             if b":" not in header or header.startswith((b" ", b"\t")):
                 raise ValueError("non-canonical multipart header")
-
         body_start = header_end + 4
         boundary_at = raw.find(marker, body_start)
         if boundary_at < 0:
             raise ValueError("missing multipart boundary")
-        body = raw[body_start:boundary_at]
-        parts.append((headers, body))
-
+        parts.append((headers, raw[body_start:boundary_at]))
         boundary_start = boundary_at + 2
         after = boundary_start + len(_DELIMITER)
         if raw[after : after + 4] == b"--\r\n":
@@ -78,32 +67,24 @@ def _encode_parts(parts: tuple[tuple[tuple[bytes, ...], bytes], ...]) -> bytes:
 def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
     """Shrink exact target-owned RFC 5987 filename* payload forms.
 
-    Fully percent-encoded payloads accept either the empty language field or the fixed
-    ``en`` tag. The mixed representation accepts only the empty-language form emitted
-    by its mutator: exactly one leading ``%HH`` octet followed by RFC 5987 attr-char
-    bytes. Other syntax is untouched so reduction cannot normalize policy-bearing or
-    ambiguous Content-Disposition input.
+    Fully percent-encoded payloads and mixed one-percent-plus-attr-char payloads accept
+    either the empty language field or the fixed ``en`` tag emitted by our mutators.
+    Other syntax is untouched so reduction cannot normalize policy-bearing or ambiguous
+    Content-Disposition input.
     """
     if not header.startswith(b"Content-Disposition:"):
         return ()
-
-    matches = [
-        (header.find(prefix), prefix)
-        for prefix in _FILENAME_STAR_PREFIXES
-        if header.find(prefix) >= 0
-    ]
+    matches = [(header.find(prefix), prefix) for prefix in _FILENAME_STAR_PREFIXES if header.find(prefix) >= 0]
     if len(matches) != 1:
         return ()
     marker_at, marker = matches[0]
     if header.find(marker, marker_at + 1) >= 0:
         return ()
-
     encoded = header[marker_at + len(marker) :]
     prefix = header[: marker_at + len(marker)]
 
     if (
-        marker == b"; filename*=UTF-8''"
-        and len(encoded) >= 4
+        len(encoded) >= 4
         and encoded[0] == ord("%")
         and all(byte in _HEX for byte in encoded[1:3])
         and all(byte in _ATTR_CHAR for byte in encoded[3:])
@@ -121,13 +102,8 @@ def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
         return ()
     if any(encoded[index] != ord("%") for index in range(0, len(encoded), 3)):
         return ()
-    if any(
-        byte not in _HEX
-        for index in range(0, len(encoded), 3)
-        for byte in encoded[index + 1 : index + 3]
-    ):
+    if any(byte not in _HEX for index in range(0, len(encoded), 3) for byte in encoded[index + 1 : index + 3]):
         return ()
-
     octets = len(encoded) // 3
     sizes = (max(1, octets // 2), 1)
     reductions = []
@@ -139,13 +115,7 @@ def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
 
 
 def multipart_form_data_reduction_candidates(raw: bytes) -> Iterator[bytes]:
-    """Yield deterministic, unique, strictly smaller canonical multipart cases.
-
-    Candidates remove complete parts, shrink part bodies, or shrink exact RFC 5987
-    ``filename*`` forms emitted by this target's percent-oriented mutators. Other header
-    mutation remains excluded: policy-bearing syntax is preserved, and malformed or
-    ambiguous input is rejected rather than repaired.
-    """
+    """Yield deterministic, unique, strictly smaller canonical multipart cases."""
     parts = _parse_parts(raw)
     seen: set[bytes] = set()
 
@@ -158,7 +128,6 @@ def multipart_form_data_reduction_candidates(raw: bytes) -> Iterator[bytes]:
     if len(parts) > 1:
         for index in range(len(parts)):
             yield from emit(parts[:index] + parts[index + 1 :])
-
     for index, (headers, body) in enumerate(parts):
         if body:
             reductions = (b"",)
@@ -168,7 +137,6 @@ def multipart_form_data_reduction_candidates(raw: bytes) -> Iterator[bytes]:
                 candidate_parts = list(parts)
                 candidate_parts[index] = (headers, reduced)
                 yield from emit(tuple(candidate_parts))
-
         for header_index, header in enumerate(headers):
             for reduced_header in _filename_star_header_reductions(header):
                 reduced_headers = list(headers)
