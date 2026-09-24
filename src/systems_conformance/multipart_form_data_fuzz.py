@@ -54,7 +54,9 @@ def multipart_form_data_charset_mutations(raw: bytes) -> Iterator[bytes]:
             yield candidate
 
 
-def _filename_star_mutations(raw: bytes, *, percent_encode_all: bool) -> Iterator[bytes]:
+def _filename_star_mutations(
+    raw: bytes, *, percent_encode_all: bool, language_tag: bytes = b""
+) -> Iterator[bytes]:
     parts = _bounded_parts(raw)
 
     for part_index, (headers, body) in enumerate(parts):
@@ -76,7 +78,9 @@ def _filename_star_mutations(raw: bytes, *, percent_encode_all: bool) -> Iterato
                 encoded = b"".join(f"%{byte:02X}".encode("ascii") for byte in filename)
             else:
                 encoded = quote_from_bytes(filename, safe="!#$&+-.^_`|~").encode("ascii")
-            mutated_header = prefix + b"; filename*=UTF-8''" + encoded
+            mutated_header = (
+                prefix + b"; filename*=UTF-8'" + language_tag + b"'" + encoded
+            )
             mutated_headers = list(headers)
             mutated_headers[header_index] = mutated_header
             candidate_parts = list(parts)
@@ -107,3 +111,15 @@ def multipart_form_data_filename_star_percent_mutations(raw: bytes) -> Iterator[
     budgets, and fail-closed parsing are identical to the ordinary filename* mutation.
     """
     yield from _filename_star_mutations(raw, percent_encode_all=True)
+
+
+def multipart_form_data_filename_star_language_mutations(raw: bytes) -> Iterator[bytes]:
+    """Yield RFC 5987 filename* mutations carrying a deterministic language tag.
+
+    The fixed ``en`` tag changes only extended-parameter metadata, not the represented
+    filename. Source eligibility and bounded fail-closed parsing are identical to the
+    ordinary filename* mutation so untrusted multipart input is never repaired.
+    """
+    yield from _filename_star_mutations(
+        raw, percent_encode_all=True, language_tag=b"en"
+    )
