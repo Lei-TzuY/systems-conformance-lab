@@ -6,6 +6,8 @@ from .multipart_form_data_adapter import MULTIPART_FORM_DATA_BOUNDARY
 
 _BOUNDARY = MULTIPART_FORM_DATA_BOUNDARY.encode("ascii")
 _DELIMITER = b"--" + _BOUNDARY
+_FILENAME_STAR_PREFIX = b"; filename*=UTF-8''"
+_HEX = frozenset(b"0123456789ABCDEFabcdef")
 
 
 def _parse_parts(raw: bytes) -> tuple[tuple[tuple[bytes, ...], bytes], ...]:
@@ -72,13 +74,47 @@ def _encode_parts(parts: tuple[tuple[tuple[bytes, ...], bytes], ...]) -> bytes:
     return bytes(framed)
 
 
+def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
+    """Shrink an unambiguous fully-percent-encoded UTF-8 filename* payload.
+
+    The reducer deliberately recognizes only the exact form emitted by the
+    multipart filename-star percent mutator: one terminal ``filename*``
+    parameter, UTF-8 charset, no language tag, and one or more ``%HH`` octets.
+    Anything else is left untouched so reduction cannot normalize an ambiguous
+    Content-Disposition policy surface.
+    """
+    if not header.startswith(b"Content-Disposition:"):
+        return ()
+    marker_at = header.find(_FILENAME_STAR_PREFIX)
+    if marker_at < 0 or header.find(_FILENAME_STAR_PREFIX, marker_at + 1) >= 0:
+        return ()
+    encoded = header[marker_at + len(_FILENAME_STAR_PREFIX) :]
+    if len(encoded) < 6 or len(encoded) % 3:
+        return ()
+    if any(encoded[index] != ord("%") for index in range(0, len(encoded), 3)):
+        return ()
+    if any(byte not in _HEX for index in range(0, len(encoded), 3) for byte in encoded[index + 1 : index + 3]):
+        return ()
+
+    octets = len(encoded) // 3
+    sizes = (max(1, octets // 2), 1)
+    prefix = header[: marker_at + len(_FILENAME_STAR_PREFIX)]
+    reductions: list[bytes] = []
+    for size in sizes:
+        candidate = prefix + encoded[: size * 3]
+        if candidate != header and candidate not in reductions:
+            reductions.append(candidate)
+    return tuple(reductions)
+
+
 def multipart_form_data_reduction_candidates(raw: bytes) -> Iterator[bytes]:
     """Yield deterministic, unique, strictly smaller canonical multipart cases.
 
-    Candidates remove complete parts or shrink part bodies while preserving
-    target-owned boundary/header semantics. Header mutation is intentionally
-    excluded: Content-Disposition and Content-Type policy differences remain
-    intact, and malformed input is rejected instead of repaired.
+    Candidates remove complete parts, shrink part bodies, or shrink the payload
+    of the exact fully-percent-encoded RFC 5987 ``filename*`` form emitted by
+    this target's mutator. Other header mutation remains excluded: policy-bearing
+    syntax is preserved, and malformed or ambiguous input is rejected rather
+    than repaired.
     """
     parts = _parse_parts(raw)
     seen: set[bytes] = set()
@@ -94,12 +130,19 @@ def multipart_form_data_reduction_candidates(raw: bytes) -> Iterator[bytes]:
             yield from emit(parts[:index] + parts[index + 1 :])
 
     for index, (headers, body) in enumerate(parts):
-        if not body:
-            continue
-        reductions = (b"",)
-        if len(body) > 1:
-            reductions += (body[: len(body) // 2], body[-1:])
-        for reduced in reductions:
-            candidate_parts = list(parts)
-            candidate_parts[index] = (headers, reduced)
-            yield from emit(tuple(candidate_parts))
+        if body:
+            reductions = (b"",)
+            if len(body) > 1:
+                reductions += (body[: len(body) // 2], body[-1:])
+            for reduced in reductions:
+                candidate_parts = list(parts)
+                candidate_parts[index] = (headers, reduced)
+                yield from emit(tuple(candidate_parts))
+
+        for header_index, header in enumerate(headers):
+            for reduced_header in _filename_star_header_reductions(header):
+                reduced_headers = list(headers)
+                reduced_headers[header_index] = reduced_header
+                candidate_parts = list(parts)
+                candidate_parts[index] = (tuple(reduced_headers), body)
+                yield from emit(tuple(candidate_parts))
