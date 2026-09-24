@@ -8,6 +8,7 @@ _BOUNDARY = MULTIPART_FORM_DATA_BOUNDARY.encode("ascii")
 _DELIMITER = b"--" + _BOUNDARY
 _FILENAME_STAR_PREFIXES = (b"; filename*=UTF-8''", b"; filename*=UTF-8'en'")
 _HEX = frozenset(b"0123456789ABCDEFabcdef")
+_ATTR_CHAR = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&+-.^_`|~")
 
 
 def _parse_parts(raw: bytes) -> tuple[tuple[tuple[bytes, ...], bytes], ...]:
@@ -75,13 +76,13 @@ def _encode_parts(parts: tuple[tuple[tuple[bytes, ...], bytes], ...]) -> bytes:
 
 
 def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
-    """Shrink an unambiguous fully-percent-encoded UTF-8 filename* payload.
+    """Shrink exact target-owned RFC 5987 filename* payload forms.
 
-    The reducer deliberately recognizes only the exact forms emitted by this
-    target's percent and language-tag mutators: one terminal ``filename*``
-    parameter, UTF-8 charset, either no language tag or the fixed ``en`` tag,
-    and one or more ``%HH`` octets. Anything else is left untouched so
-    reduction cannot normalize an ambiguous Content-Disposition policy surface.
+    Fully percent-encoded payloads accept either the empty language field or the fixed
+    ``en`` tag. The mixed representation accepts only the empty-language form emitted
+    by its mutator: exactly one leading ``%HH`` octet followed by RFC 5987 attr-char
+    bytes. Other syntax is untouched so reduction cannot normalize policy-bearing or
+    ambiguous Content-Disposition input.
     """
     if not header.startswith(b"Content-Disposition:"):
         return ()
@@ -98,6 +99,24 @@ def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
         return ()
 
     encoded = header[marker_at + len(marker) :]
+    prefix = header[: marker_at + len(marker)]
+
+    if (
+        marker == b"; filename*=UTF-8''"
+        and len(encoded) >= 4
+        and encoded[0] == ord("%")
+        and all(byte in _HEX for byte in encoded[1:3])
+        and all(byte in _ATTR_CHAR for byte in encoded[3:])
+    ):
+        suffix = encoded[3:]
+        sizes = (max(1, len(suffix) // 2), 1)
+        reductions: list[bytes] = []
+        for size in sizes:
+            candidate = prefix + encoded[:3] + suffix[:size]
+            if candidate != header and candidate not in reductions:
+                reductions.append(candidate)
+        return tuple(reductions)
+
     if len(encoded) < 6 or len(encoded) % 3:
         return ()
     if any(encoded[index] != ord("%") for index in range(0, len(encoded), 3)):
@@ -111,8 +130,7 @@ def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
 
     octets = len(encoded) // 3
     sizes = (max(1, octets // 2), 1)
-    prefix = header[: marker_at + len(marker)]
-    reductions: list[bytes] = []
+    reductions = []
     for size in sizes:
         candidate = prefix + encoded[: size * 3]
         if candidate != header and candidate not in reductions:
@@ -123,11 +141,10 @@ def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
 def multipart_form_data_reduction_candidates(raw: bytes) -> Iterator[bytes]:
     """Yield deterministic, unique, strictly smaller canonical multipart cases.
 
-    Candidates remove complete parts, shrink part bodies, or shrink the payload
-    of the exact fully-percent-encoded RFC 5987 ``filename*`` forms emitted by
-    this target's mutators. Other header mutation remains excluded: policy-bearing
-    syntax is preserved, and malformed or ambiguous input is rejected rather
-    than repaired.
+    Candidates remove complete parts, shrink part bodies, or shrink exact RFC 5987
+    ``filename*`` forms emitted by this target's percent-oriented mutators. Other header
+    mutation remains excluded: policy-bearing syntax is preserved, and malformed or
+    ambiguous input is rejected rather than repaired.
     """
     parts = _parse_parts(raw)
     seen: set[bytes] = set()
