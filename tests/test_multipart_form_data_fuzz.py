@@ -11,6 +11,7 @@ from systems_conformance import (
 from systems_conformance.multipart_form_data_adapter import MULTIPART_FORM_DATA_BOUNDARY
 from systems_conformance.multipart_form_data_fuzz import (
     multipart_form_data_charset_mutations,
+    multipart_form_data_filename_star_language_mutations,
     multipart_form_data_filename_star_mutations,
     multipart_form_data_filename_star_percent_mutations,
 )
@@ -189,3 +190,48 @@ def test_real_targets_discover_percent_encoded_filename_star_mismatch() -> None:
     assert failure.signature.kind == "product_mismatch"
     assert failure.signature.dimensions == ("stdout",)
     assert b"filename*=UTF-8''%70%6C%61%69%6E%2E%74%78%74" in failure.case
+
+
+def test_filename_star_language_mutations_are_deterministic_and_preserve_filename() -> None:
+    seed = _file_part(b'filename="plain.txt"')
+    expected = _file_part(b"filename*=UTF-8'en'%70%6C%61%69%6E%2E%74%78%74")
+
+    first = tuple(multipart_form_data_filename_star_language_mutations(seed))
+    second = tuple(multipart_form_data_filename_star_language_mutations(seed))
+
+    assert first == second
+    assert first == (expected,)
+
+
+def test_filename_star_language_mutations_share_fail_closed_bounds() -> None:
+    with pytest.raises(ValueError):
+        tuple(multipart_form_data_filename_star_language_mutations(b"not multipart"))
+    with pytest.raises(ValueError, match="byte budget"):
+        tuple(multipart_form_data_filename_star_language_mutations(b"x" * (64 * 1024 + 1)))
+    assert tuple(
+        multipart_form_data_filename_star_language_mutations(
+            _file_part(b'filename="semi;colon.txt"')
+        )
+    ) == ()
+
+
+def test_real_targets_discover_filename_star_language_policy_mismatch() -> None:
+    harness = _harness()
+    seed = _file_part(b'filename="plain.txt"')
+    cases = (seed, *multipart_form_data_filename_star_language_mutations(seed))
+
+    assert harness.compare(seed).classification == "match"
+    discovery = run_failure_discovery_campaign(
+        cases=cases.__getitem__,
+        evaluate=harness.compare,
+        max_evaluations=len(cases),
+        max_unique_failures=1,
+    )
+
+    assert discovery.evaluations == 2
+    assert len(discovery.failures) == 1
+    failure = discovery.failures[0]
+    assert failure.evaluation_index == 1
+    assert failure.signature.kind == "product_mismatch"
+    assert failure.signature.dimensions == ("stdout",)
+    assert b"filename*=UTF-8'en'%70%6C%61%69%6E%2E%74%78%74" in failure.case
