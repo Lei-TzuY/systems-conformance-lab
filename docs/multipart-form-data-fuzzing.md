@@ -14,6 +14,8 @@ A filename mutation starts from the shared subset's canonical ASCII `filename=".
 
 The real-target integration starts from a `filename="plain.txt"` file part that matches across Python and Node. Mutation produces `filename*=UTF-8''plain.txt`; Python's stdlib parser accepts the extended parameter while Node `Response.formData()` rejects that form, so ordinary failure discovery records a product mismatch generated from a matching seed.
 
+A second deterministic mutation exercises RFC 5987 percent decoding separately from attr-char handling by percent-encoding every byte of the same eligible ASCII filename. For example, `plain.txt` becomes `%70%6C%61%69%6E%2E%74%78%74`. The represented filename is unchanged, so the real-target campaign can probe extended-parameter decoding without changing application semantics or introducing a prewritten failing witness.
+
 ## Bounds and trust model
 
-Both mutation paths accept only the canonical multipart framing used by the structural reducer. Input is capped at 64 KiB and 64 parts before candidates are constructed. Malformed framing and oversized structures fail closed rather than being repaired. Generic fuzz scheduling and failure classification remain unchanged.
+All mutation paths accept only the canonical multipart framing used by the structural reducer. Input is capped at 64 KiB and 64 parts before candidates are constructed. Malformed framing and oversized structures fail closed rather than being repaired. Generic fuzz scheduling and failure classification remain unchanged.
