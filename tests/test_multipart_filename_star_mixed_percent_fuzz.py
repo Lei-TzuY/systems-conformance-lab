@@ -87,12 +87,12 @@ def test_mixed_percent_reducer_preserves_representation_boundary() -> None:
 
     assert _file_part(b"filename*=UTF-8''%70l", body=b"") in candidates
     assert _file_part(b"filename*=UTF-8''%70", body=b"") not in candidates
-    assert tuple(
-        multipart_form_data_reduction_candidates(
-            _file_part(b"filename*=UTF-8'en'%70lain.txt", body=b"")
-        )
-    ) == ()
 
+    tagged = _file_part(b"filename*=UTF-8'en'%70lain.txt", body=b"")
+    tagged_candidates = tuple(multipart_form_data_reduction_candidates(tagged))
+    assert _file_part(b"filename*=UTF-8'en'%70l", body=b"") in tagged_candidates
+    assert _file_part(b"filename*=UTF-8'en'%70", body=b"") not in tagged_candidates
+    assert all(b"filename*=UTF-8'en'" in candidate for candidate in tagged_candidates)
 
 def test_real_targets_discover_mixed_percent_filename_star_mismatch() -> None:
     harness = _harness()
