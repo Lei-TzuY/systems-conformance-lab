@@ -55,7 +55,11 @@ def multipart_form_data_charset_mutations(raw: bytes) -> Iterator[bytes]:
 
 
 def _filename_star_mutations(
-    raw: bytes, *, percent_encode_all: bool, language_tag: bytes = b""
+    raw: bytes,
+    *,
+    percent_encode_all: bool,
+    language_tag: bytes = b"",
+    lowercase_percent_hex: bool = False,
 ) -> Iterator[bytes]:
     parts = _bounded_parts(raw)
 
@@ -75,7 +79,10 @@ def _filename_star_mutations(
 
             prefix = header[: marker_index + 1]
             if percent_encode_all:
-                encoded = b"".join(f"%{byte:02X}".encode("ascii") for byte in filename)
+                hex_format = "02x" if lowercase_percent_hex else "02X"
+                encoded = b"".join(
+                    f"%{byte:{hex_format}}".encode("ascii") for byte in filename
+                )
             else:
                 encoded = quote_from_bytes(filename, safe="!#$&+-.^_`|~").encode("ascii")
             mutated_header = (
@@ -111,6 +118,20 @@ def multipart_form_data_filename_star_percent_mutations(raw: bytes) -> Iterator[
     budgets, and fail-closed parsing are identical to the ordinary filename* mutation.
     """
     yield from _filename_star_mutations(raw, percent_encode_all=True)
+
+
+def multipart_form_data_filename_star_lowercase_percent_mutations(
+    raw: bytes,
+) -> Iterator[bytes]:
+    """Yield RFC 5987 filename* mutations using lowercase percent-escape hex digits.
+
+    Percent escapes are case-insensitive, so this preserves the same filename semantics
+    while exercising a distinct decoder representation. Eligibility, input budgets, and
+    fail-closed parsing remain identical to the other target-owned filename* mutations.
+    """
+    yield from _filename_star_mutations(
+        raw, percent_encode_all=True, lowercase_percent_hex=True
+    )
 
 
 def multipart_form_data_filename_star_language_mutations(raw: bytes) -> Iterator[bytes]:
