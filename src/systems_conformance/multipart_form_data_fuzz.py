@@ -60,6 +60,7 @@ def _filename_star_mutations(
     percent_encode_all: bool,
     language_tag: bytes = b"",
     lowercase_percent_hex: bool = False,
+    mixed_percent_attr: bool = False,
 ) -> Iterator[bytes]:
     parts = _bounded_parts(raw)
 
@@ -76,9 +77,13 @@ def _filename_star_mutations(
                 continue
             if any(byte in b'"\\%;' for byte in filename):
                 continue
+            if mixed_percent_attr and len(filename) < 2:
+                continue
 
             prefix = header[: marker_index + 1]
-            if percent_encode_all:
+            if mixed_percent_attr:
+                encoded = f"%{filename[0]:02X}".encode("ascii") + filename[1:]
+            elif percent_encode_all:
                 hex_format = "02x" if lowercase_percent_hex else "02X"
                 encoded = b"".join(
                     f"%{byte:{hex_format}}".encode("ascii") for byte in filename
@@ -131,6 +136,21 @@ def multipart_form_data_filename_star_lowercase_percent_mutations(
     """
     yield from _filename_star_mutations(
         raw, percent_encode_all=True, lowercase_percent_hex=True
+    )
+
+
+def multipart_form_data_filename_star_mixed_percent_mutations(
+    raw: bytes,
+) -> Iterator[bytes]:
+    """Yield filename* mutations mixing one percent octet with attr-char bytes.
+
+    The first filename byte is percent encoded while the remaining safe ASCII bytes are
+    left literal. This exercises decoder transitions between percent and attr-char forms
+    without changing filename semantics. At least two filename bytes are required so the
+    generated payload is genuinely mixed; all normal multipart bounds remain in force.
+    """
+    yield from _filename_star_mutations(
+        raw, percent_encode_all=False, mixed_percent_attr=True
     )
 
 
