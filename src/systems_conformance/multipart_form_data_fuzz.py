@@ -54,16 +54,7 @@ def multipart_form_data_charset_mutations(raw: bytes) -> Iterator[bytes]:
             yield candidate
 
 
-def multipart_form_data_filename_star_mutations(raw: bytes) -> Iterator[bytes]:
-    """Yield semantic-preserving RFC 5987 filename* policy mutations.
-
-    Only the canonical ASCII ``filename="..."`` form emitted by the shared multipart
-    subset is eligible. The filename bytes must be printable ASCII without quoting or
-    percent characters; this keeps the source semantics unambiguous. The mutation
-    replaces exactly one filename parameter with an equivalent UTF-8 ``filename*``
-    parameter. Malformed/non-canonical multipart input and budget violations fail
-    closed through the same bounded parser used by the charset mutation.
-    """
+def _filename_star_mutations(raw: bytes, *, percent_encode_all: bool) -> Iterator[bytes]:
     parts = _bounded_parts(raw)
 
     for part_index, (headers, body) in enumerate(parts):
@@ -81,7 +72,10 @@ def multipart_form_data_filename_star_mutations(raw: bytes) -> Iterator[bytes]:
                 continue
 
             prefix = header[: marker_index + 1]
-            encoded = quote_from_bytes(filename, safe="!#$&+-.^_`|~").encode("ascii")
+            if percent_encode_all:
+                encoded = b"".join(f"%{byte:02X}".encode("ascii") for byte in filename)
+            else:
+                encoded = quote_from_bytes(filename, safe="!#$&+-.^_`|~").encode("ascii")
             mutated_header = prefix + b"; filename*=UTF-8''" + encoded
             mutated_headers = list(headers)
             mutated_headers[header_index] = mutated_header
@@ -90,3 +84,26 @@ def multipart_form_data_filename_star_mutations(raw: bytes) -> Iterator[bytes]:
             candidate = _encode_parts(tuple(candidate_parts))
             if candidate != raw:
                 yield candidate
+
+
+def multipart_form_data_filename_star_mutations(raw: bytes) -> Iterator[bytes]:
+    """Yield semantic-preserving RFC 5987 filename* policy mutations.
+
+    Only the canonical ASCII ``filename="..."`` form emitted by the shared multipart
+    subset is eligible. The filename bytes must be printable ASCII without quoting or
+    percent characters; this keeps the source semantics unambiguous. The mutation
+    replaces exactly one filename parameter with an equivalent UTF-8 ``filename*``
+    parameter. Malformed/non-canonical multipart input and budget violations fail
+    closed through the same bounded parser used by the charset mutation.
+    """
+    yield from _filename_star_mutations(raw, percent_encode_all=False)
+
+
+def multipart_form_data_filename_star_percent_mutations(raw: bytes) -> Iterator[bytes]:
+    """Yield RFC 5987 filename* mutations with every filename byte percent encoded.
+
+    This exercises extended-parameter percent decoding independently of attr-char
+    handling while preserving the same ASCII filename semantics. Eligibility, input
+    budgets, and fail-closed parsing are identical to the ordinary filename* mutation.
+    """
+    yield from _filename_star_mutations(raw, percent_encode_all=True)
