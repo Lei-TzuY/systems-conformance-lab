@@ -6,23 +6,29 @@ from systems_conformance import (
     DifferentialHarness,
     MultipartFormDataNodeTarget,
     MultipartFormDataTarget,
+    reduce_failure_to_repro,
     run_failure_discovery_campaign,
 )
 from systems_conformance.multipart_form_data_adapter import MULTIPART_FORM_DATA_BOUNDARY
 from systems_conformance.multipart_form_data_fuzz import (
     multipart_form_data_filename_star_lowercase_percent_mutations,
 )
+from systems_conformance.multipart_form_data_reducer import (
+    multipart_form_data_reduction_candidates,
+)
 
 _BOUNDARY = MULTIPART_FORM_DATA_BOUNDARY.encode("ascii")
 
 
-def _file_part(filename_parameter: bytes) -> bytes:
+def _file_part(filename_parameter: bytes, *, body: bytes = b"abc") -> bytes:
     return (
         b"--"
         + _BOUNDARY
         + b'\r\nContent-Disposition: form-data; name="f"; '
         + filename_parameter
-        + b"\r\nContent-Type: text/plain\r\n\r\nabc\r\n--"
+        + b"\r\nContent-Type: text/plain\r\n\r\n"
+        + body
+        + b"\r\n--"
         + _BOUNDARY
         + b"--\r\n"
     )
@@ -93,3 +99,35 @@ def test_real_targets_discover_lowercase_percent_filename_star_mismatch() -> Non
     assert failure.signature.kind == "product_mismatch"
     assert failure.signature.dimensions == ("stdout",)
     assert b"filename*=UTF-8''%70%6c%61%69%6e%2e%74%78%74" in failure.case
+
+
+def test_lowercase_percent_discovery_reduces_and_replays(tmp_path) -> None:
+    harness = _harness()
+    seed = _file_part(b'filename="plain.txt"', body=b"padding-padding")
+    cases = (
+        seed,
+        *multipart_form_data_filename_star_lowercase_percent_mutations(seed),
+    )
+    discovery = run_failure_discovery_campaign(
+        cases=cases.__getitem__,
+        evaluate=harness.compare,
+        max_evaluations=len(cases),
+        max_unique_failures=1,
+    )
+    assert len(discovery.failures) == 1
+    failure = discovery.failures[0]
+
+    reduced = reduce_failure_to_repro(
+        failure,
+        harness=harness,
+        destination=tmp_path / "multipart-filename-star-lowercase-percent-repro",
+        candidates=multipart_form_data_reduction_candidates,
+        metadata={"domain": "multipart-filename-star-lowercase-percent"},
+    )
+
+    assert b"filename*=UTF-8''%70" in reduced.reduction.reduced
+    assert b"%6c%61%69%6e%2e%74%78%74" not in reduced.reduction.reduced
+    replay = harness.replay_repro(reduced.repro.path)
+    assert replay.reproduced is True
+    assert replay.run.signature == failure.signature
+    assert replay.bundle.metadata["domain"] == "multipart-filename-star-lowercase-percent"
