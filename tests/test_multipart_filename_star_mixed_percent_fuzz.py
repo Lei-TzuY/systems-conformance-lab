@@ -86,7 +86,7 @@ def test_mixed_percent_reducer_preserves_representation_boundary() -> None:
     candidates = tuple(multipart_form_data_reduction_candidates(raw))
 
     assert _file_part(b"filename*=UTF-8''%70l", body=b"") in candidates
-    assert all(b"filename*=UTF-8''%70" not in candidate for candidate in candidates)
+    assert _file_part(b"filename*=UTF-8''%70", body=b"") not in candidates
     assert tuple(
         multipart_form_data_reduction_candidates(
             _file_part(b"filename*=UTF-8'en'%70lain.txt", body=b"")
