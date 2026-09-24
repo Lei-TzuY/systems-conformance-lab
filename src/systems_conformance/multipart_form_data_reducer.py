@@ -6,7 +6,7 @@ from .multipart_form_data_adapter import MULTIPART_FORM_DATA_BOUNDARY
 
 _BOUNDARY = MULTIPART_FORM_DATA_BOUNDARY.encode("ascii")
 _DELIMITER = b"--" + _BOUNDARY
-_FILENAME_STAR_PREFIX = b"; filename*=UTF-8''"
+_FILENAME_STAR_PREFIXES = (b"; filename*=UTF-8''", b"; filename*=UTF-8'en'")
 _HEX = frozenset(b"0123456789ABCDEFabcdef")
 
 
@@ -77,28 +77,41 @@ def _encode_parts(parts: tuple[tuple[tuple[bytes, ...], bytes], ...]) -> bytes:
 def _filename_star_header_reductions(header: bytes) -> tuple[bytes, ...]:
     """Shrink an unambiguous fully-percent-encoded UTF-8 filename* payload.
 
-    The reducer deliberately recognizes only the exact form emitted by the
-    multipart filename-star percent mutator: one terminal ``filename*``
-    parameter, UTF-8 charset, no language tag, and one or more ``%HH`` octets.
-    Anything else is left untouched so reduction cannot normalize an ambiguous
-    Content-Disposition policy surface.
+    The reducer deliberately recognizes only the exact forms emitted by this
+    target's percent and language-tag mutators: one terminal ``filename*``
+    parameter, UTF-8 charset, either no language tag or the fixed ``en`` tag,
+    and one or more ``%HH`` octets. Anything else is left untouched so
+    reduction cannot normalize an ambiguous Content-Disposition policy surface.
     """
     if not header.startswith(b"Content-Disposition:"):
         return ()
-    marker_at = header.find(_FILENAME_STAR_PREFIX)
-    if marker_at < 0 or header.find(_FILENAME_STAR_PREFIX, marker_at + 1) >= 0:
+
+    matches = [
+        (header.find(prefix), prefix)
+        for prefix in _FILENAME_STAR_PREFIXES
+        if header.find(prefix) >= 0
+    ]
+    if len(matches) != 1:
         return ()
-    encoded = header[marker_at + len(_FILENAME_STAR_PREFIX) :]
+    marker_at, marker = matches[0]
+    if header.find(marker, marker_at + 1) >= 0:
+        return ()
+
+    encoded = header[marker_at + len(marker) :]
     if len(encoded) < 6 or len(encoded) % 3:
         return ()
     if any(encoded[index] != ord("%") for index in range(0, len(encoded), 3)):
         return ()
-    if any(byte not in _HEX for index in range(0, len(encoded), 3) for byte in encoded[index + 1 : index + 3]):
+    if any(
+        byte not in _HEX
+        for index in range(0, len(encoded), 3)
+        for byte in encoded[index + 1 : index + 3]
+    ):
         return ()
 
     octets = len(encoded) // 3
     sizes = (max(1, octets // 2), 1)
-    prefix = header[: marker_at + len(_FILENAME_STAR_PREFIX)]
+    prefix = header[: marker_at + len(marker)]
     reductions: list[bytes] = []
     for size in sizes:
         candidate = prefix + encoded[: size * 3]
@@ -111,8 +124,8 @@ def multipart_form_data_reduction_candidates(raw: bytes) -> Iterator[bytes]:
     """Yield deterministic, unique, strictly smaller canonical multipart cases.
 
     Candidates remove complete parts, shrink part bodies, or shrink the payload
-    of the exact fully-percent-encoded RFC 5987 ``filename*`` form emitted by
-    this target's mutator. Other header mutation remains excluded: policy-bearing
+    of the exact fully-percent-encoded RFC 5987 ``filename*`` forms emitted by
+    this target's mutators. Other header mutation remains excluded: policy-bearing
     syntax is preserved, and malformed or ambiguous input is rejected rather
     than repaired.
     """
