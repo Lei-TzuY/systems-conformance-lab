@@ -117,3 +117,75 @@ def test_real_charset_mismatch_reduces_and_replays(tmp_path) -> None:
     assert replay.reproduced is True
     assert replay.run.signature == failure.signature
     assert replay.bundle.metadata["domain"] == "multipart-form-data-structural-reducer"
+
+
+def _percent_filename_part(encoded: bytes, body: bytes = b"payload") -> bytes:
+    return _part(
+        headers=(
+            b'Content-Disposition: form-data; name="upload"; filename*=UTF-8\'\'' + encoded,
+            b"Content-Type: application/octet-stream",
+        ),
+        body=body,
+    )
+
+
+def test_percent_filename_star_payload_reduction_is_bounded_and_policy_preserving() -> None:
+    raw = _multipart(_percent_filename_part(b"%70%6C%61%69%6E%2E%74%78%74"))
+    candidates = tuple(multipart_form_data_reduction_candidates(raw))
+
+    half = _multipart(_percent_filename_part(b"%70%6C%61%69", body=b"payload"))
+    one = _multipart(_percent_filename_part(b"%70", body=b"payload"))
+    assert half in candidates
+    assert one in candidates
+    assert all(b"filename*=UTF-8''" in candidate for candidate in (half, one))
+    assert all(len(candidate) < len(raw) for candidate in candidates)
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        b"filename*=UTF-8''plain.txt",
+        b"filename*=UTF-8''%70%6",
+        b"filename*=iso-8859-1''%70%6C",
+        b"filename*=UTF-8'en'%70%6C",
+        b"filename*=UTF-8''%70%6C; x=y",
+    ],
+)
+def test_filename_star_header_reduction_leaves_other_policy_forms_untouched(parameter: bytes) -> None:
+    header = b'Content-Disposition: form-data; name="upload"; ' + parameter
+    raw = _multipart(_part(headers=(header,), body=b""))
+
+    assert tuple(multipart_form_data_reduction_candidates(raw)) == ()
+
+
+def test_real_percent_filename_star_mismatch_reduces_and_replays(tmp_path) -> None:
+    harness = _harness()
+    witness = _multipart(
+        _percent_filename_part(b"%70%6C%61%69%6E%2E%74%78%74", body=b"padding-padding")
+    )
+    discovery = run_failure_discovery_campaign(
+        cases=(witness,).__getitem__,
+        evaluate=harness.compare,
+        max_evaluations=1,
+        max_unique_failures=1,
+    )
+
+    assert len(discovery.failures) == 1
+    failure = discovery.failures[0]
+    assert failure.signature.kind == "product_mismatch"
+
+    reduced = reduce_failure_to_repro(
+        failure,
+        harness=harness,
+        destination=tmp_path / "multipart-filename-star-reduced-repro",
+        candidates=multipart_form_data_reduction_candidates,
+        metadata={"domain": "multipart-filename-star-percent-reducer"},
+    )
+
+    assert len(reduced.reduction.reduced) < len(witness)
+    assert b"filename*=UTF-8''%70" in reduced.reduction.reduced
+    assert b"%6C%61%69%6E%2E%74%78%74" not in reduced.reduction.reduced
+    replay = harness.replay_repro(reduced.repro.path)
+    assert replay.reproduced is True
+    assert replay.run.signature == failure.signature
+    assert replay.bundle.metadata["domain"] == "multipart-filename-star-percent-reducer"
