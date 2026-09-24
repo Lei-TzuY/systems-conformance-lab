@@ -24,13 +24,7 @@ def _bounded_parts(raw: bytes) -> tuple[tuple[tuple[bytes, ...], bytes], ...]:
 
 
 def multipart_form_data_charset_mutations(raw: bytes) -> Iterator[bytes]:
-    """Yield bounded deterministic charset-policy mutations for canonical form-data.
-
-    A mutation preserves the Unicode text represented by one UTF-8 text part while
-    switching its explicit charset and body bytes to ISO-8859-1. Only text that is
-    representable in Latin-1 is eligible. Malformed/non-canonical multipart input,
-    oversized input, or excessive part counts fail closed rather than being repaired.
-    """
+    """Yield bounded deterministic charset-policy mutations for canonical form-data."""
     parts = _bounded_parts(raw)
 
     for index, (headers, body) in enumerate(parts):
@@ -93,9 +87,7 @@ def _filename_star_mutations(
                 )
             else:
                 encoded = quote_from_bytes(filename, safe="!#$&+-.^_`|~").encode("ascii")
-            mutated_header = (
-                prefix + b"; filename*=UTF-8'" + language_tag + b"'" + encoded
-            )
+            mutated_header = prefix + b"; filename*=UTF-8'" + language_tag + b"'" + encoded
             mutated_headers = list(headers)
             mutated_headers[header_index] = mutated_header
             candidate_parts = list(parts)
@@ -106,65 +98,38 @@ def _filename_star_mutations(
 
 
 def multipart_form_data_filename_star_mutations(raw: bytes) -> Iterator[bytes]:
-    """Yield semantic-preserving RFC 5987 filename* policy mutations.
-
-    Only the canonical ASCII ``filename="..."`` form emitted by the shared multipart
-    subset is eligible. The filename bytes must be printable ASCII without quoting or
-    percent characters; this keeps the source semantics unambiguous. The mutation
-    replaces exactly one filename parameter with an equivalent UTF-8 ``filename*``
-    parameter. Malformed/non-canonical multipart input and budget violations fail
-    closed through the same bounded parser used by the charset mutation.
-    """
+    """Yield semantic-preserving RFC 5987 filename* policy mutations."""
     yield from _filename_star_mutations(raw, percent_encode_all=False)
 
 
 def multipart_form_data_filename_star_percent_mutations(raw: bytes) -> Iterator[bytes]:
-    """Yield RFC 5987 filename* mutations with every filename byte percent encoded.
-
-    This exercises extended-parameter percent decoding independently of attr-char
-    handling while preserving the same ASCII filename semantics. Eligibility, input
-    budgets, and fail-closed parsing are identical to the ordinary filename* mutation.
-    """
+    """Yield RFC 5987 filename* mutations with every filename byte percent encoded."""
     yield from _filename_star_mutations(raw, percent_encode_all=True)
 
 
-def multipart_form_data_filename_star_lowercase_percent_mutations(
-    raw: bytes,
-) -> Iterator[bytes]:
-    """Yield RFC 5987 filename* mutations using lowercase percent-escape hex digits.
+def multipart_form_data_filename_star_lowercase_percent_mutations(raw: bytes) -> Iterator[bytes]:
+    """Yield RFC 5987 filename* mutations using lowercase percent-escape hex digits."""
+    yield from _filename_star_mutations(raw, percent_encode_all=True, lowercase_percent_hex=True)
 
-    Percent escapes are case-insensitive, so this preserves the same filename semantics
-    while exercising a distinct decoder representation. Eligibility, input budgets, and
-    fail-closed parsing remain identical to the other target-owned filename* mutations.
+
+def multipart_form_data_filename_star_mixed_percent_mutations(raw: bytes) -> Iterator[bytes]:
+    """Yield filename* mutations mixing one percent octet with attr-char bytes."""
+    yield from _filename_star_mutations(raw, percent_encode_all=False, mixed_percent_attr=True)
+
+
+def multipart_form_data_filename_star_language_mixed_percent_mutations(raw: bytes) -> Iterator[bytes]:
+    """Yield fixed-language filename* mutations mixing percent and attr-char bytes.
+
+    The target-owned representation combines the deterministic ``en`` language field
+    with exactly one leading percent-encoded octet and a non-empty RFC 5987 attr-char
+    suffix. This crosses both decoder policy boundaries while preserving the original
+    ASCII filename semantics and the existing bounded fail-closed multipart parser.
     """
     yield from _filename_star_mutations(
-        raw, percent_encode_all=True, lowercase_percent_hex=True
-    )
-
-
-def multipart_form_data_filename_star_mixed_percent_mutations(
-    raw: bytes,
-) -> Iterator[bytes]:
-    """Yield filename* mutations mixing one percent octet with attr-char bytes.
-
-    The first filename byte is percent encoded while the remaining RFC 5987 attr-char
-    bytes stay literal. This exercises decoder transitions between percent and literal
-    forms without changing filename semantics. At least two filename bytes are required
-    so the payload is genuinely mixed; unsafe suffixes fail closed instead of being
-    normalized, and all normal multipart bounds remain in force.
-    """
-    yield from _filename_star_mutations(
-        raw, percent_encode_all=False, mixed_percent_attr=True
+        raw, percent_encode_all=False, language_tag=b"en", mixed_percent_attr=True
     )
 
 
 def multipart_form_data_filename_star_language_mutations(raw: bytes) -> Iterator[bytes]:
-    """Yield RFC 5987 filename* mutations carrying a deterministic language tag.
-
-    The fixed ``en`` tag changes only extended-parameter metadata, not the represented
-    filename. Source eligibility and bounded fail-closed parsing are identical to the
-    ordinary filename* mutation so untrusted multipart input is never repaired.
-    """
-    yield from _filename_star_mutations(
-        raw, percent_encode_all=True, language_tag=b"en"
-    )
+    """Yield RFC 5987 filename* mutations carrying a deterministic language tag."""
+    yield from _filename_star_mutations(raw, percent_encode_all=True, language_tag=b"en")
