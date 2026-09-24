@@ -11,6 +11,7 @@ _UTF8_CONTENT_TYPE = b"Content-Type: text/plain; charset=utf-8"
 _LATIN1_CONTENT_TYPE = b"Content-Type: text/plain; charset=iso-8859-1"
 _CONTENT_DISPOSITION_PREFIX = b'Content-Disposition: form-data; name="'
 _FILENAME_MARKER = b'"; filename="'
+_ATTR_CHAR = frozenset(b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$&+-.^_`|~")
 
 
 def _bounded_parts(raw: bytes) -> tuple[tuple[tuple[bytes, ...], bytes], ...]:
@@ -77,7 +78,9 @@ def _filename_star_mutations(
                 continue
             if any(byte in b'"\\%;' for byte in filename):
                 continue
-            if mixed_percent_attr and len(filename) < 2:
+            if mixed_percent_attr and (
+                len(filename) < 2 or any(byte not in _ATTR_CHAR for byte in filename[1:])
+            ):
                 continue
 
             prefix = header[: marker_index + 1]
@@ -144,10 +147,11 @@ def multipart_form_data_filename_star_mixed_percent_mutations(
 ) -> Iterator[bytes]:
     """Yield filename* mutations mixing one percent octet with attr-char bytes.
 
-    The first filename byte is percent encoded while the remaining safe ASCII bytes are
-    left literal. This exercises decoder transitions between percent and attr-char forms
-    without changing filename semantics. At least two filename bytes are required so the
-    generated payload is genuinely mixed; all normal multipart bounds remain in force.
+    The first filename byte is percent encoded while the remaining RFC 5987 attr-char
+    bytes stay literal. This exercises decoder transitions between percent and literal
+    forms without changing filename semantics. At least two filename bytes are required
+    so the payload is genuinely mixed; unsafe suffixes fail closed instead of being
+    normalized, and all normal multipart bounds remain in force.
     """
     yield from _filename_star_mutations(
         raw, percent_encode_all=False, mixed_percent_attr=True
